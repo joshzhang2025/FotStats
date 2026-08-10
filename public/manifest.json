@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "FotStats",
+  "version": "0.1.0",
+  "description": "Live win probability and a minute-by-minute win-probability timeline for FotMob match pages.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["https://www.fotmob.com/*", "https://data.fotmob.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FotStats"
+  },
+  "background": {
+    "service_worker": "worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.fotmob.com/*"],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://www.fotmob.com/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ]
+}

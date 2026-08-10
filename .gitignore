@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.zip
+test/fixtures/*.json
+!test/fixtures/.gitkeep
+preview.html

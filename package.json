@@ -1,0 +1,23 @@
+{
+  "name": "fotstats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live win probability and win-probability timeline for FotMob match pages.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:dev": "node scripts/build.mjs --dev",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "scenarios": "node scripts/scenarios.ts",
+    "preview": "node scripts/preview.ts",
+    "test": "node --test test/*.test.ts",
+    "calibrate": "node --test test/calibration.test.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}
