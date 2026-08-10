@@ -77,6 +77,92 @@ with groups list a team more than once, and MLS returns 60 rows for 30 teams.
 Note that a table with 0 games played — a season that has not started — is correctly *rejected*,
 and the popup says so ("season has not started") rather than pretending it has information.
 
+### Historical tables
+
+That standings file has no date in it: it is always *today's* table. For a live match that is
+exactly right, but for a match played last January it describes a season that had not happened yet
+— including the result of the match being predicted. The baseline was reading its own answer.
+
+So for the Premier League the table is rebuilt from results instead, cut off at the day of kickoff.
+[`src/model/history.ts`](src/model/history.ts) folds a results list into the same `TableRow[]` the
+live path produces, so `prematchBaseline` is unchanged and does not know the difference.
+
+Results rather than tables, for two reasons. A table is just a fold over results at one instant, so
+one 380-row file yields every table that season ever had. And matchday-indexed tables are ambiguous
+anyway — postponements mean teams within "matchday 21" have played different numbers of games,
+while a date cutoff is exact.
+
+```bash
+npm run fetch-history                        # last 12 seasons
+npm run fetch-history -- --from 2000         # further back
+```
+
+That writes `public/data/pl-history.json` (12 seasons ≈ 80 KB) from
+[football-data.co.uk](https://www.football-data.co.uk/englandm.php), which publishes one CSV per
+season back to 1993/94 with no key and no auth. It is **not** part of `npm run build` — a build
+should not depend on a third-party host — so the generated file is committed.
+
+Two details that are load-bearing:
+
+- **The cutoff is the start of the kickoff day, not the kickoff instant.** Source dates have no time
+  component, so an instant cutoff would rank the match's own stored date (midnight) as earlier than
+  its kickoff and fold the result into its own baseline. Cutting at day start drops every same-day
+  fixture — a handful of matches off the league-average denominator, and no way to leak.
+- **Only the two teams playing need real FotMob ids.** `prematchBaseline` looks up exactly two rows;
+  every other row exists solely to compute the league average. So the other rows get synthetic
+  negative ids, and no FotMob team-id database is needed at all.
+
+The results file identifies clubs by name, so the two sources are reconciled onto a canonical key in
+[`src/model/teams.ts`](src/model/teams.ts). An unmapped club **fails the fetch script loudly** rather
+than silently losing its table — expect to add two or three names each August when the promoted
+clubs arrive.
+
+Everything declines to null rather than guessing: unknown club, missing team id, a season the file
+does not cover, fewer than four rows. Null means "use the live table", so a stale download degrades
+to today's behaviour instead of serving half a season as if it were whole.
+
+### Carrying last season forward
+
+Cutting the table at kickoff creates a new problem at the other end of the season: in August there
+is no table. Three games say almost nothing about a side, and below `PARAMS.table.minPlayed` the
+model bails to league averages entirely. Measured over the archive, **13.2% of matches** had no
+usable table — every one of which previously got a full-season one.
+
+But a thin table is not all that was known at kickoff. Last season had happened, and everyone had
+seen it. So last season's finished rates are carried in as **pseudo-games**: a club that scored 1.8
+a game last year starts this one credited with `priorGames` matches at 1.8.
+
+Expressing the prior as *games* rather than a weight means it dilutes itself. The implied weight is
+`priorGames / (priorGames + played)` — dominant on the opening weekend, about a third by midwinter,
+a fifth by May — with no decay schedule to write or tune. Adding it to every club keeps the league
+average, a ratio of those same totals, consistent.
+
+A promoted club has no previous top-flight record. Treating it as average is wrong in a measurable
+direction: across 33 promoted clubs in 11 seasons they scored **0.71x** and conceded **1.23x** the
+league average, and the sign held in every single season. Those are `promotedAttack` and
+`promotedDefence`.
+
+`npm run tune-prior` sweeps `priorGames` over the archive, scoring each match at minute 0 against
+what actually happened — out-of-sample by construction, since the table is cut at kickoff:
+
+```
+  prior     Brier       log-loss   covered   thin table
+      0   0.60064 +0.00000   1.00542    4479    11.7%
+      5   0.58860 -0.01204   0.98804    4553     1.0%
+     10   0.58664 -0.01400   0.98531    4553     1.0%
+     15   0.58624 -0.01440   0.98480    4553     1.0%  <- best
+     30   0.58709 -0.01355   0.98608    4553     1.0%
+```
+
+The shipped value is **10, not the best-scoring 15**. The optimum is flat, and fitting each half of
+the archive separately picks 20 and 12 — they disagree, so the precise peak is noise. 10 is the
+smallest value inside both halves' error bands: it leans least on a season already over, and costs
+0.0004 Brier. The script prints that stability check for exactly this reason.
+
+Two things the sweep is honest about. Scores are computed on the 4,479 matches *every* value can
+price, since higher priors cover more of the archive and comparing different samples would flatter
+them. And coverage is reported separately rather than folded into the score.
+
 ## The model
 
 One pure function does all the work:
@@ -93,11 +179,16 @@ loop.
 That has a useful consequence: **the timeline works on matches that finished last season, and on
 matches you opened at minute 70.** There is no accumulated state to have missed.
 
+The one thing a past match *can* get wrong is the pre-match baseline, since the league table it
+rests on is dated. That is what [Historical tables](#historical-tables) fixes.
+
 How a probability is built, in order:
 
 1. **Pre-match baseline** — goals for/against per game from the league standings, relative to the
-   league average, applied to a home/away baseline. Falls back to league averages when there is no
-   table or fewer than 5 games have been played.
+   league average, applied to a home/away baseline. For a past Premier League match the standings
+   are rebuilt as of the day of kickoff (see [Historical tables](#historical-tables)); otherwise
+   they are FotMob's current ones. Falls back to league averages when there is no table or fewer
+   than 5 games have been played.
 2. **Live xG blending** — shrink the prior toward what this match is actually producing, with the
    live signal gaining weight as minutes accrue (equal weight at minute 45).
 3. **Adjustments** — red cards (down a man: creates less, concedes more), game state (trailing
@@ -120,9 +211,10 @@ an xG feed, not a scouting model — and at minute 0 with no table it is saying 
 ## Tests
 
 ```bash
-npm test          # sanity + adapter (fast, no browser, no fixtures needed)
-npm run scenarios # print the model's output for familiar match situations
-npm run calibrate # reliability against captured matches
+npm test           # sanity + adapter (fast, no browser, no fixtures needed)
+npm run scenarios  # print the model's output for familiar match situations
+npm run tune-prior # sweep the previous-season prior over the results archive
+npm run calibrate  # reliability against captured matches
 ```
 
 The sanity suite proves the model is *coherent*: probabilities sum to 1 at every minute, converge
@@ -161,6 +253,23 @@ the gap column. Fixtures are gitignored — large, and not ours to redistribute.
 One caveat the harness prints for itself: predictions from the same match are correlated, so a
 small fixture set is indicative rather than significant.
 
+Expect Premier League numbers to get slightly *worse* now that the baseline no longer sees the
+finished season — that is the fix working. Other competitions still use today's table and are
+flattered accordingly, so do not compare their Brier scores against the PL's.
+
+Scoring the baseline alone at minute 0 across the archive puts numbers on that trade:
+
+```
+final table (leaky, sees result)   Brier 0.55985   log-loss 0.94539
+as-of kickoff, no prior            Brier 0.60064   log-loss 1.00542
+as-of kickoff + previous season    Brier 0.58583   log-loss 0.98423
+```
+
+The previous-season prior recovers about **36%** of what removing the leak cost. The other 64% is
+not a defect to chase: the leaky row contains the answer to the question it is being asked, and no
+honest model reaches it. It is on the table as a reminder of how much of the old accuracy was
+borrowed rather than earned.
+
 ## Testing it in the browser
 
 Load `dist/` as an unpacked extension (see Install), then work through these in order. Start with a
@@ -171,8 +280,10 @@ Load `dist/` as an unpacked extension (see Install), then work through these in 
 final score, the full-time probability sitting on the actual winner, and a timeline whose goal
 markers line up with when the goals went in.
 
-**2. Check the footer.** It reports the xG totals and where the baseline came from. Any data
-warnings appear here — that is the first place a FotMob field rename shows up.
+**2. Check the footer.** It reports the xG totals and where the baseline came from. On a past
+Premier League match it should read "Baseline from league table as of *the match date*" — if it
+says "league table form" instead, the historical lookup declined and you are seeing today's table.
+Any data warnings appear here — that is the first place a FotMob field rename shows up.
 
 **3. A live match.** Probabilities should shift within ~30s as FotMob polls, and the timeline should
 stop at the current minute rather than running to 90.
@@ -226,11 +337,16 @@ src/bg/worker.ts              per-tab snapshot cache
 src/shared/protocol.ts        message shapes, match-id parsing
 src/types/fotmob.ts           raw payload shapes (imported only by extract.ts)
 src/model/extract.ts          the only file that knows FotMob's field names
+src/model/history.ts          league table rebuilt as of a given day
+src/model/teams.ts            club-name reconciliation between the two sources
 src/model/params.ts           every tunable constant
 src/model/poisson.ts          pmf, outcome grid, Dixon-Coles
 src/model/winprob.ts          winProb(snapshot, minute) — pure
 src/model/replay.ts           minute-by-minute driver, timeline markers
 src/popup/                    popup logic and hand-rolled SVG chart
+public/data/pl-history.json   generated: PL results, one entry per season
+scripts/fetch-history.ts      regenerates the above from football-data.co.uk
+scripts/tune-prior.ts         sweeps the previous-season prior against it
 ```
 
 ## Not built yet
@@ -239,3 +355,17 @@ src/popup/                    popup logic and hand-rolled SVG chart
 them from 20% to 48%" — it just isn't surfaced. The luck meter (score vs. cumulative xG) needs no new
 model work either; both values are already on the snapshot. Table impact would need standings data
 the model does not currently keep.
+
+Two more that the historical results file has now put within reach:
+
+- **Calibration against the market.** The football-data.co.uk CSVs carry closing odds (`PSH/PSD/PSA`
+  from Pinnacle, `AvgH/AvgD/AvgA` across books). De-vig those and `npm run calibrate` could score
+  the model against a real benchmark instead of against nothing — a far stronger test than the
+  hand-written reference prices in `scenarios.ts`. `fetch-history.ts` currently drops these columns;
+  keeping them is a few lines.
+- **Separate home and away strengths.** The `h*` split above needs no new source: home and away
+  records fall straight out of a results list.
+
+Other competitions still use FotMob's live table. Extending coverage is mostly data entry —
+football-data.co.uk uses the same URL shape for other divisions (`E1` Championship, `SP1` La Liga,
+`D1` Bundesliga), so it is a division code, a FotMob league id, and the club names for that league.

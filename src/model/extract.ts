@@ -390,6 +390,10 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
     redCards,
     shots,
     table,
+    // Extraction only reports what the payload said. Substituting a
+    // point-in-time table is the worker's job, since it needs the bundled
+    // results file.
+    tableAsOfDay: null,
     standingsUrl,
     fullTime: Math.max(PARAMS.expectedFullTime, Math.ceil(maxEventMinute)),
     kickoffUtc,

@@ -61,8 +61,15 @@ export function weightedMinutes(from: number, to: number, fullTime: number): num
 export interface Baseline {
   home: number;
   away: number;
-  /** Where the numbers came from, surfaced in the UI so the model is legible. */
-  source: 'table' | 'league-average';
+  /**
+   * Where the numbers came from, surfaced in the UI so the model is legible.
+   *
+   * `table` is FotMob's live standings — correct for a match happening now,
+   * but for a past match it is the season as it *finished*, which includes the
+   * result being predicted. `table-historical` is the same shape rebuilt from
+   * results up to the day of kickoff, and is the honest one for past matches.
+   */
+  source: 'table' | 'table-historical' | 'league-average';
   /** Why the table was not used, when one was available but unusable. */
   reason?: string;
 }
@@ -120,7 +127,7 @@ export function prematchBaseline(snapshot: MatchSnapshot): Baseline {
   return {
     home: clamp(fallback.homeLambda * homeAtk * awayDef, minLambda, maxLambda),
     away: clamp(fallback.awayLambda * awayAtk * homeDef, minLambda, maxLambda),
-    source: 'table',
+    source: snapshot.tableAsOfDay === null ? 'table' : 'table-historical',
   };
 }
 

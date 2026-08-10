@@ -10,9 +10,11 @@
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "scenarios": "node scripts/scenarios.ts",
+    "fetch-history": "node scripts/fetch-history.ts",
     "preview": "node scripts/preview.ts",
     "test": "node --test test/*.test.ts",
-    "calibrate": "node --test test/calibration.test.ts"
+    "calibrate": "node --test test/calibration.test.ts",
+    "tune-prior": "node scripts/tune-prior.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

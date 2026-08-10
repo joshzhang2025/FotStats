@@ -34,6 +34,32 @@ export const PARAMS = {
   table: {
     /** Below this many played, table rates are noise — fall back to baseline. */
     minPlayed: 5,
+    /**
+     * Last season's record, carried into this one as this many pseudo-games.
+     *
+     * Only the historical path can use this — it needs a results archive. The
+     * prior's weight is `priorGames / (priorGames + played)`, so it falls out
+     * of the arithmetic rather than needing a decay schedule: dominant on the
+     * opening weekend, about a third by midwinter, a fifth by May.
+     *
+     * Swept against 12 seasons of Premier League results — `npm run tune-prior`.
+     * The optimum is flat, and the two halves of the archive disagree about
+     * where it sits (20 and 12), so this is the smallest value inside both
+     * halves' error bands rather than the single best-scoring one. It leans
+     * least on a season already over, and costs 0.0004 Brier against the peak.
+     */
+    priorGames: 10,
+    /**
+     * A promoted club has no previous top-flight record, so it starts from the
+     * league average scaled by these. Measured over 33 promoted clubs across
+     * 11 seasons: they scored 0.71x and conceded 1.23x the league average, and
+     * the direction held in every single season.
+     *
+     * Without this, a promoted side is priced as an average one and the model
+     * overrates it for the two months it takes real games to outweigh the prior.
+     */
+    promotedAttack: 0.71,
+    promotedDefence: 1.23,
     /** Attack/defence strength ratios are clamped into this band. */
     minStrength: 0.6,
     maxStrength: 1.6,

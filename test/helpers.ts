@@ -15,6 +15,7 @@ export function makeSnapshot(overrides: Partial<MatchSnapshot> = {}): MatchSnaps
     redCards: [],
     shots: [],
     table: null,
+    tableAsOfDay: null,
     standingsUrl: null,
     fullTime: PARAMS.expectedFullTime,
     kickoffUtc: null,

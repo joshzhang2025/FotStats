@@ -1,4 +1,5 @@
 import { parseStandings } from '../model/extract.ts';
+import { historicalTable, type History } from '../model/history.ts';
 import type { MatchSnapshot, TableRow } from '../model/types.ts';
 import { matchIdFromPageUrl, type RuntimeMessage, type SnapshotResponse } from '../shared/protocol.ts';
 
@@ -112,6 +113,59 @@ async function fetchStandings(url: string): Promise<TableRow[] | null> {
   return request;
 }
 
+// --- point-in-time tables for past matches ----------------------------------
+
+/**
+ * Bundled historical results, loaded once per worker lifetime.
+ *
+ * This is a packaged file read through `runtime.getURL`, so there is no host
+ * permission, no network, and no failure mode worth retrying — but a miss is
+ * still non-fatal, because the live table remains as a fallback.
+ */
+let historyPromise: Promise<History | null> | null = null;
+
+function loadHistory(): Promise<History | null> {
+  historyPromise ??= (async () => {
+    try {
+      const response = await fetch(chrome.runtime.getURL('data/pl-history.json'));
+      return response.ok ? ((await response.json()) as History) : null;
+    } catch {
+      return null;
+    }
+  })();
+  return historyPromise;
+}
+
+/**
+ * Replace the live table with the one that was true at kickoff.
+ *
+ * Applies even when the payload already carried standings: an in-payload table
+ * is FotMob's current one, which for a past match has seen the result it is
+ * being used to predict. Returns the snapshot untouched when there is no
+ * historical table to substitute.
+ */
+async function withHistoricalTable(snapshot: MatchSnapshot): Promise<MatchSnapshot> {
+  if (snapshot.kickoffUtc === null) return snapshot;
+
+  const history = await loadHistory();
+  if (!history) return snapshot;
+
+  const resolved = historicalTable(history, snapshot.leagueId, snapshot.kickoffUtc, {
+    homeName: snapshot.home.name,
+    homeId: snapshot.home.id,
+    awayName: snapshot.away.name,
+    awayId: snapshot.away.id,
+  });
+  if (!resolved) return snapshot;
+
+  return {
+    ...snapshot,
+    table: resolved.rows,
+    tableAsOfDay: resolved.day,
+    warnings: snapshot.warnings.filter((w) => !w.includes('standings')),
+  };
+}
+
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {
   if (message?.type === 'snapshot') {
     const tabId = sender.tab?.id;
@@ -159,7 +213,12 @@ async function resolveSnapshot(tabId?: number): Promise<SnapshotResponse> {
 
   const cached = await load(tab.id);
   if (cached) {
-    const { snapshot } = cached;
+    // A point-in-time table outranks everything else, including a table the
+    // payload already carried — that one is today's, and for a past match
+    // today's table has already seen the result.
+    const snapshot = await withHistoricalTable(cached.snapshot);
+    if (snapshot.tableAsOfDay !== null) return { ok: true, snapshot };
+
     // Merge in separately-captured standings only when the payload itself had
     // none, so a real in-payload table always wins.
     if (snapshot.table === null) {

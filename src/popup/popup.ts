@@ -62,10 +62,19 @@ function render(snapshot: MatchSnapshot) {
     )
     .join('');
 
+  // Naming the *date* of a historical table matters: it is the difference
+  // between a number that knew how the season ended and one that did not.
+  const asOf =
+    snapshot.tableAsOfDay === null
+      ? null
+      : new Date(snapshot.tableAsOfDay * 86_400_000).toISOString().slice(0, 10);
+
   const baselineNote =
-    detail.baseline.source === 'table'
-      ? 'Baseline from league table form'
-      : `Baseline from league averages (${esc(detail.baseline.reason ?? 'no table data')})`;
+    detail.baseline.source === 'table-historical'
+      ? `Baseline from league table as of ${esc(asOf ?? 'kickoff')}`
+      : detail.baseline.source === 'table'
+        ? 'Baseline from league table form'
+        : `Baseline from league averages (${esc(detail.baseline.reason ?? 'no table data')})`;
 
   // Show every warning in full: these describe what the payload actually
   // contained, which is the whole point of having them.

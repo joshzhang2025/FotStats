@@ -24,6 +24,7 @@ const snapshot = (overrides: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
   redCards: [],
   shots: [],
   table: null,
+  tableAsOfDay: null,
   standingsUrl: null,
   fullTime: PARAMS.expectedFullTime,
   kickoffUtc: null,
