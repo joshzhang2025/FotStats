@@ -84,11 +84,19 @@ export function buildTimeline(snapshot: MatchSnapshot, upTo?: number): Timeline 
     if (goal.minute > through) continue;
     if (goal.isHome) homeScore++;
     else awayScore++;
+    // Scoreline first so the numbers stay in a column, then the scorer the way
+    // FotMob names them. An unnamed scorer just leaves the bare scoreline.
+    const scorer = goal.scorer ? ` — ${goal.scorer}` : '';
+    // Worded here and only here — `assist` holds a bare name, whichever field
+    // it came out of. A second name in brackets on its own is only unambiguous
+    // if you already know the convention. An own goal has no assist worth
+    // showing even if the payload carries one.
+    const assist = goal.assist && !goal.ownGoal ? ` (Assist by ${goal.assist})` : '';
     markers.push({
       kind: 'goal',
       minute: goal.minute,
       isHome: goal.isHome,
-      label: `${homeScore}-${awayScore}${goal.ownGoal ? ' (OG)' : ''}`,
+      label: `${homeScore}-${awayScore}${scorer}${goal.ownGoal ? ' (OG)' : ''}${assist}`,
       homeProb: probAt(goal.minute),
     });
   }
@@ -116,7 +124,7 @@ export function nextGoalSwing(snapshot: MatchSnapshot, minute: number) {
   const withGoal = (isHome: boolean) => {
     const hypothetical: MatchSnapshot = {
       ...snapshot,
-      goals: [...snapshot.goals, { minute, isHome, ownGoal: false }],
+      goals: [...snapshot.goals, { minute, isHome, ownGoal: false, scorer: null, assist: null }],
     };
     return winProb(hypothetical, minute);
   };

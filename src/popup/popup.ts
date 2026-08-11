@@ -2,7 +2,16 @@ import { buildTimeline, currentMinute, type Timeline } from '../model/replay.ts'
 import type { MatchSnapshot } from '../model/types.ts';
 import { winProbDetailed } from '../model/winprob.ts';
 import type { SnapshotResponse } from '../shared/protocol.ts';
-import { CHART, minuteAtX, renderBar, renderTimeline, resolveColors, xForMinute } from './chart.ts';
+import {
+  CHART,
+  esc,
+  minuteAtX,
+  renderBar,
+  renderEvents,
+  renderTimeline,
+  resolveColors,
+  xForMinute,
+} from './chart.ts';
 
 const root = document.getElementById('root')!;
 
@@ -26,16 +35,6 @@ function renderEmpty(reason: string) {
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
-/**
- * Everything interpolated below originates in FotMob's payload — team names,
- * marker labels, diagnostic strings. None of it is ours to trust in innerHTML.
- */
-const esc = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
-
 function statusLabel(snapshot: MatchSnapshot, minute: number): string {
   if (snapshot.status.cancelled) return 'Cancelled';
   if (snapshot.status.finished) return 'Full time';
@@ -50,17 +49,7 @@ function render(snapshot: MatchSnapshot) {
   const colors = resolveColors(snapshot);
   const state = detail.state;
 
-  const eventList = timeline.markers
-    .slice()
-    .reverse()
-    .slice(0, 6)
-    .map(
-      (m) =>
-        `<li><span class="min">${m.minute}'</span><span>${
-          m.kind === 'goal' ? '⚽' : '\u{1f7e5}'
-        } ${esc(m.label)}</span></li>`,
-    )
-    .join('');
+  const teams = { home: snapshot.home.name, away: snapshot.away.name };
 
   // Naming the *date* of a historical table matters: it is the difference
   // between a number that knew how the season ended and one that did not.
@@ -110,7 +99,7 @@ function render(snapshot: MatchSnapshot) {
         ${renderTimeline(timeline, colors)}
         <div class="tooltip" id="tooltip"></div>
       </div>
-      ${eventList ? `<ul class="events">${eventList}</ul>` : ''}
+      ${renderEvents(timeline, teams, colors)}
     </section>
 
     <footer>

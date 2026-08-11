@@ -25,10 +25,17 @@ export function makeSnapshot(overrides: Partial<MatchSnapshot> = {}): MatchSnaps
   };
 }
 
-export const goal = (minute: number, isHome: boolean): GoalEvent => ({
+export const goal = (
+  minute: number,
+  isHome: boolean,
+  scorer: string | null = null,
+  assist: string | null = null,
+): GoalEvent => ({
   minute,
   isHome,
   ownGoal: false,
+  scorer,
+  assist,
 });
 
 export const red = (minute: number, isHome: boolean): RedCardEvent => ({ minute, isHome });

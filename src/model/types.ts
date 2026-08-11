@@ -13,6 +13,16 @@ export interface GoalEvent {
   isHome: boolean;
   /** Own goals still credit the scoring side; recorded for display only. */
   ownGoal: boolean;
+  /**
+   * Scorer, as FotMob names them. Display only — the model never reads it.
+   * Null when the payload named nobody, which the UI has to survive.
+   */
+  scorer: string | null;
+  /**
+   * Assisting player, same terms. FotMob only records assists for some
+   * competitions, so null here is ordinary rather than a sign of a problem.
+   */
+  assist: string | null;
 }
 
 export interface RedCardEvent {

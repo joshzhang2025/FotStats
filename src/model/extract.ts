@@ -31,6 +31,44 @@ function eventMinute(ev: FotmobEvent): number | null {
   return base + added;
 }
 
+/** First of several candidate fields that actually holds a name. */
+function firstName(...candidates: unknown[]): string | null {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
+/**
+ * The player an event belongs to.
+ *
+ * `nameStr` first because it is the string FotMob renders in its own match
+ * facts — matching it keeps the popup reading like the page behind it. The rest
+ * are fallbacks for payloads that carry only the structured player object.
+ */
+function eventPlayer(ev: FotmobEvent): string | null {
+  return firstName(ev.nameStr, ev.player?.name, ev.fullName, ev.shortName);
+}
+
+/**
+ * FotMob's assist fields arrive pre-phrased — "assist by K. De Bruyne" — while
+ * the structured ones hold a bare name. Strip the phrasing so this field is
+ * what it claims to be, and the one place that displays it can word it once.
+ */
+const ASSIST_PHRASING = /^assist(ed)?\s*(by)?\s*[:–—-]?\s*/i;
+
+/**
+ * Who set the goal up, where that is known.
+ *
+ * FotMob only collects assists for some competitions — the Premier League has
+ * them, plenty of leagues do not — so nothing is warned about when this comes
+ * back empty. It is absent data, not missing data.
+ */
+function eventAssist(ev: FotmobEvent): string | null {
+  const raw = firstName(ev.assistStr, ev.assistInput, ev.assistantPlayer?.name, ev.assist?.name);
+  return raw === null ? null : (firstName(raw.replace(ASSIST_PHRASING, '')) ?? null);
+}
+
 function shotMinute(shot: FotmobShot): number | null {
   const base = num(shot.min);
   if (base === null) return null;
@@ -281,7 +319,13 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
     maxEventMinute = Math.max(maxEventMinute, minute);
 
     if (type.includes('goal')) {
-      goals.push({ minute, isHome, ownGoal: ev.ownGoal === true || ev.isOwnGoal === true });
+      goals.push({
+        minute,
+        isHome,
+        ownGoal: ev.ownGoal === true || ev.isOwnGoal === true,
+        scorer: eventPlayer(ev),
+        assist: eventAssist(ev),
+      });
     } else if (type.includes('card')) {
       const card = String(ev.card ?? ev.cardType ?? '').toLowerCase();
       if (card.includes('red')) redCards.push({ minute, isHome });
@@ -290,6 +334,13 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
 
   goals.sort((a, b) => a.minute - b.minute);
   redCards.sort((a, b) => a.minute - b.minute);
+
+  // Scorers are display-only, so a missing name degrades to the bare scoreline
+  // rather than failing. Every goal missing one is a different matter — that is
+  // a rename, and the popup should say so.
+  if (goals.length && goals.every((g) => g.scorer === null)) {
+    warnings.push('goal events carry no player name (nameStr/player.name)');
+  }
 
   // --- own-goal attribution self-check ------------------------------------
   // FotMob's `isHome` on a goal event is ambiguous for own goals: it can mean

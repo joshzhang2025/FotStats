@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { buildTimeline } from '../src/model/replay.ts';
-import { CHART, minuteAtX, renderTimeline, resolveColors, xForMinute } from '../src/popup/chart.ts';
+import {
+  CHART,
+  minuteAtX,
+  renderEvents,
+  renderTimeline,
+  resolveColors,
+  xForMinute,
+} from '../src/popup/chart.ts';
 import { goal, makeSnapshot, red } from './helpers.ts';
 
 /**
@@ -106,9 +113,31 @@ describe('timeline chart', () => {
     assert.equal(fills.length, 3);
     assert.equal(fills.filter((f) => f === colors.home).length, 2);
     assert.equal(fills.filter((f) => f === colors.away).length, 1);
+    // Each is a ball, not a plain dot: one centre panel and five seams apiece.
+    assert.equal([...svg.matchAll(/class="ball-face"/g)].length, 3);
+    assert.equal([...svg.matchAll(/class="ball-seam"/g)].length, 15);
 
-    // The red card is drawn as a square, in its own colour.
+    // The red card is drawn as a card, in its own colour.
     assert.ok(/<rect [^>]*fill="#e5484d"/.test(svg), 'red card marker missing');
+  });
+
+  it('keeps every marker in its lane above the plot', () => {
+    // A marker inside the plot lands on whichever line passes through it.
+    const svg = renderTimeline(buildTimeline(finished), colors);
+    const glyphs = [...svg.matchAll(/<(?:circle|rect) [^>]*class="marker-dot"[^>]*\/>/g)].map(
+      (m) => m[0]!,
+    );
+    assert.equal(glyphs.length, 4, 'three goals and a red card');
+
+    for (const glyph of glyphs) {
+      const cy = Number(/cy="([\d.]+)"/.exec(glyph)?.[1] ?? NaN);
+      const r = Number(/ r="([\d.]+)"/.exec(glyph)?.[1] ?? NaN);
+      const y = Number(/ y="([\d.]+)"/.exec(glyph)?.[1] ?? NaN);
+      const bottom = Number.isNaN(cy)
+        ? y + Number(/height="([\d.]+)"/.exec(glyph)?.[1] ?? NaN)
+        : cy + r;
+      assert.ok(bottom < CHART.padTop, `marker reaches ${bottom}, into the plot at ${CHART.padTop}`);
+    }
   });
 
   it('maps a hover position back to the right minute', () => {
@@ -119,6 +148,53 @@ describe('timeline chart', () => {
     // Inside the axis gutter clamps to kickoff rather than going negative.
     assert.equal(minuteAtX(0, fullTime), 0);
     assert.equal(minuteAtX(CHART.width + 50, fullTime), fullTime);
+  });
+});
+
+describe('goal summary', () => {
+  const teams = { home: 'Liverpool', away: 'Manchester City' };
+
+  it('colours each row by the side the event belongs to', () => {
+    const timeline = buildTimeline(
+      makeSnapshot({ goals: [goal(23, true, 'M. Salah'), goal(58, false, 'E. Haaland')] }),
+    );
+    const html = renderEvents(timeline, teams, colors);
+    const swatches = [...html.matchAll(/class="swatch" style="background:([^"]+)"/g)].map(
+      (m) => m[1]!,
+    );
+
+    // Newest first, so the away goal leads.
+    assert.deepEqual(swatches, [colors.away, colors.home]);
+    assert.ok(html.includes('title="Manchester City"'), 'colour needs a non-visual fallback');
+    assert.ok(html.indexOf('E. Haaland') < html.indexOf('M. Salah'));
+  });
+
+  it('lists the red card against the side that was shown it', () => {
+    const timeline = buildTimeline(makeSnapshot({ redCards: [red(65, false)] }));
+    const html = renderEvents(timeline, teams, colors);
+    assert.ok(html.includes(`background:${colors.away}`));
+  });
+
+  it('keeps only the most recent events', () => {
+    const many = makeSnapshot({
+      goals: Array.from({ length: 9 }, (_, i) => goal(i * 10 + 1, i % 2 === 0)),
+    });
+    const html = renderEvents(buildTimeline(many), teams, colors);
+    assert.equal([...html.matchAll(/<li /g)].length, 6);
+    assert.ok(html.includes('81\''), 'the latest event must survive the cut');
+  });
+
+  it('renders nothing at all for a match with no events', () => {
+    assert.equal(renderEvents(buildTimeline(makeSnapshot()), teams, colors), '');
+  });
+
+  it('escapes names, which come from FotMob', () => {
+    const hostile = buildTimeline(
+      makeSnapshot({ goals: [goal(10, true, '<img src=x onerror=alert(1)>')] }),
+    );
+    const html = renderEvents(hostile, { home: '"><script>', away: 'B' }, colors);
+    assert.ok(!html.includes('<img'), html);
+    assert.ok(!html.includes('<script'), html);
   });
 });
 

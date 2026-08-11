@@ -8,12 +8,24 @@ import type { MatchSnapshot } from '../model/types.ts';
 
 export const CHART = {
   width: 348,
-  height: 164,
+  height: 178,
   padLeft: 26,
   padRight: 6,
-  padTop: 8,
+  /** Room for the marker lane above the plot as well as the top gridline. */
+  padTop: 22,
   padBottom: 18,
 } as const;
+
+/**
+ * Goals and red cards get a lane of their own above the plot rather than a dot
+ * on the top gridline: a marker sitting inside the plot lands on whichever line
+ * happens to pass through it, which is exactly where the reader is looking.
+ */
+const MARKER_R = 5;
+const MARKER_Y = 12;
+/** Centre panel of the ball, as a fraction of its radius. */
+const PANEL_R = MARKER_R * 0.42;
+const RED_CARD_COLOR = '#e5484d';
 
 const plotLeft = CHART.padLeft;
 const plotRight = CHART.width - CHART.padRight;
@@ -37,6 +49,37 @@ const yForValue = (value: number) => plotTop + (1 - value) * plotHeight;
 export function minuteAtX(svgX: number, fullTime: number): number {
   const ratio = Math.min(1, Math.max(0, (svgX - plotLeft) / plotWidth));
   return Math.round(ratio * fullTime);
+}
+
+/**
+ * A football, in the scoring side's colour.
+ *
+ * Ten pixels across is not much to draw a ball in, and the emoji is no use here
+ * because its colours are fixed — the whole point of the marker is to say which
+ * side scored. What survives at this size is the silhouette: a centre panel,
+ * point up, with a seam running out of each of its corners. Everything is
+ * cut out of the body in the page colour rather than drawn on top of it, so the
+ * team colour stays the thing you actually see.
+ */
+function football(cx: number, cy: number, color: string): string {
+  const angles = Array.from({ length: 5 }, (_, i) => ((-90 + i * 72) * Math.PI) / 180);
+  const at = (radius: number, angle: number) =>
+    [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)] as const;
+
+  const panel = angles.map((a) => at(PANEL_R, a).map(fmt).join(',')).join(' ');
+  const seams = angles
+    .map((a) => {
+      const [x1, y1] = at(PANEL_R, a);
+      // Stop just short of the rim, so the seams do not eat its outline.
+      const [x2, y2] = at(MARKER_R - 0.5, a);
+      return `<line x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2)}" y2="${fmt(y2)}" class="ball-seam"/>`;
+    })
+    .join('');
+
+  return (
+    `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${MARKER_R}" fill="${color}" class="marker-dot"/>` +
+    `<polygon points="${panel}" class="ball-face"/>${seams}`
+  );
 }
 
 function parseHex(hex: string): [number, number, number] | null {
@@ -135,14 +178,19 @@ export function renderTimeline(timeline: Timeline, colors: { home: string; away:
 
   const markerEls = markers
     .map((marker) => {
-      const x = fmt(xForMinute(marker.minute, fullTime));
-      const color = marker.kind === 'red' ? '#e5484d' : marker.isHome ? colors.home : colors.away;
+      const x = xForMinute(marker.minute, fullTime);
+      const color =
+        marker.kind === 'red' ? RED_CARD_COLOR : marker.isHome ? colors.home : colors.away;
+      // A ball for a goal, a card for a red — each in the scoring side's colour,
+      // the same one its probability line is drawn in.
       const glyph =
         marker.kind === 'goal'
-          ? `<circle cx="${x}" cy="${plotTop + 4}" r="3" fill="${color}" class="marker-dot"/>`
-          : `<rect x="${Number(x) - 2}" y="${plotTop + 1}" width="4" height="7" rx="1" fill="${color}" class="marker-dot"/>`;
+          ? football(x, MARKER_Y, color)
+          : `<rect x="${fmt(x - 2.5)}" y="${MARKER_Y - 4}" width="5" height="8" rx="1.5" fill="${color}" class="marker-dot"/>`;
+      // The dropline is what puts the marker on the clock; it starts below the
+      // glyph so the two read as one object.
       return (
-        `<line x1="${x}" y1="${plotTop}" x2="${x}" y2="${plotBottom}" class="marker-line"/>${glyph}`
+        `<line x1="${fmt(x)}" y1="${MARKER_Y + MARKER_R + 1.5}" x2="${fmt(x)}" y2="${plotBottom}" class="marker-line"/>${glyph}`
       );
     })
     .join('');
@@ -182,6 +230,55 @@ export function renderTimeline(timeline: Timeline, colors: { home: string; away:
       ${timeLabels}
       <line id="scrub" x1="0" y1="${plotTop}" x2="0" y2="${plotBottom}" class="scrub" style="display:none"/>
     </svg>`;
+}
+
+/** Most recent events listed under the chart; older ones fall off the end. */
+const EVENT_LIMIT = 6;
+
+/**
+ * Everything interpolated into markup here originates in FotMob's payload —
+ * team names, scorer names, marker labels. None of it is ours to trust.
+ */
+export const esc = (value: string) =>
+  value.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+  );
+
+/**
+ * The goal summary under the chart, newest first.
+ *
+ * A running scoreline does not say who scored it — reading "1-0" then "1-1"
+ * means diffing two rows to find which number moved. The swatch settles it in
+ * the popup's existing vocabulary: the same colour as that side's line, its
+ * marker on the chart, and its figure in the legend, so no row has to spend
+ * width repeating a team name.
+ */
+export function renderEvents(
+  timeline: Timeline,
+  teams: { home: string; away: string },
+  colors: { home: string; away: string },
+): string {
+  const rows = timeline.markers
+    .slice()
+    .reverse()
+    .slice(0, EVENT_LIMIT)
+    .map((marker) => {
+      const team = marker.isHome ? teams.home : teams.away;
+      const color = marker.isHome ? colors.home : colors.away;
+      // The title is the non-visual fallback: colour alone is no use to a
+      // screen reader, and not everyone separates two hues reliably.
+      return (
+        `<li title="${esc(team)}">` +
+        `<span class="min">${marker.minute}'</span>` +
+        `<i class="swatch" style="background:${color}"></i>` +
+        `<span class="what">${marker.kind === 'goal' ? '⚽' : '\u{1f7e5}'} ${esc(marker.label)}</span>` +
+        `</li>`
+      );
+    })
+    .join('');
+
+  return rows ? `<ul class="events">${rows}</ul>` : '';
 }
 
 /** Single stacked bar for the current probabilities. */

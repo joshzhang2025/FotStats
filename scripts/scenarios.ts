@@ -33,7 +33,13 @@ const snapshot = (overrides: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
   ...overrides,
 });
 
-const goal = (minute: number, isHome: boolean) => ({ minute, isHome, ownGoal: false });
+const goal = (minute: number, isHome: boolean) => ({
+  minute,
+  isHome,
+  ownGoal: false,
+  scorer: null,
+  assist: null,
+});
 const red = (minute: number, isHome: boolean) => ({ minute, isHome });
 
 const xg = (isHome: boolean, total: number, count = 10, until = 90): ShotEvent[] =>

@@ -17,7 +17,7 @@ import { buildTimeline } from '../src/model/replay.ts';
 import type { MatchSnapshot } from '../src/model/types.ts';
 import { PARAMS } from '../src/model/params.ts';
 import { winProbDetailed } from '../src/model/winprob.ts';
-import { renderBar, renderTimeline, resolveColors } from '../src/popup/chart.ts';
+import { renderBar, renderEvents, renderTimeline, resolveColors } from '../src/popup/chart.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -41,12 +41,25 @@ const snapshot = (overrides: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
   ...overrides,
 });
 
-const goal = (minute: number, isHome: boolean) => ({ minute, isHome, ownGoal: false });
+const goal = (
+  minute: number,
+  isHome: boolean,
+  scorer: string | null = null,
+  assist: string | null = null,
+) => ({ minute, isHome, ownGoal: false, scorer, assist });
 
 const cases: Array<{ title: string; snapshot: MatchSnapshot; upTo?: number }> = [
   {
     title: 'Tottenham 1–2 Newcastle (full time)',
-    snapshot: snapshot({ goals: [goal(50, false), goal(64, true), goal(68, false)] }),
+    snapshot: snapshot({
+      goals: [
+        goal(50, false, 'A. Isak'),
+        goal(64, true, 'H. Son'),
+        // Left unnamed on purpose: FotMob does not always carry a scorer, and
+        // the row has to still make sense without one.
+        goal(68, false),
+      ],
+    }),
   },
   {
     title: 'Live, 63′ — home leading',
@@ -82,7 +95,12 @@ const cases: Array<{ title: string; snapshot: MatchSnapshot; upTo?: number }> = 
       home: { id: 1, name: 'Liverpool' },
       away: { id: 2, name: 'Man City' },
       colors: { home: '#d00027', away: '#6cabdd' },
-      goals: [goal(35, true), goal(80, false)],
+      goals: [
+        // The Premier League is one of the competitions FotMob records assists
+        // for; most are not, so the row above shows the shape without one.
+        goal(35, true, 'M. Salah', 'T. Alexander-Arnold'),
+        goal(80, false, 'E. Haaland', 'K. De Bruyne'),
+      ],
     }),
   },
 ];
@@ -109,6 +127,7 @@ const panels = cases
           <span><i class="swatch" style="background:${colors.away}"></i><span class="name">${s.away.name}</span> <b>${pct(detail.away)}</b></span>
         </div>
         <div class="chart">${renderTimeline(timeline, colors)}</div>
+        ${renderEvents(timeline, { home: s.home.name, away: s.away.name }, colors)}
       </div>`;
   })
   .join('');

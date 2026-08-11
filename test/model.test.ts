@@ -256,6 +256,31 @@ describe('timeline', () => {
     assert.equal(timeline.markers[2]!.label, '1-1');
   });
 
+  it('names the scorer when the payload carried one', () => {
+    const named = makeSnapshot({
+      goals: [
+        goal(12, true, 'B. Saka'),
+        { minute: 70, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: null },
+      ],
+    });
+    const { markers } = buildTimeline(named);
+    assert.equal(markers[0]!.label, '1-0 — B. Saka');
+    assert.equal(markers[1]!.label, '1-1 — W. Saliba (OG)', 'own goals still name the player');
+  });
+
+  it('credits the assist where the competition records one', () => {
+    const assisted = makeSnapshot({
+      goals: [
+        goal(12, true, 'B. Saka', 'M. Ødegaard'),
+        // An own goal is nobody's assist, whatever the payload claims.
+        { minute: 70, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: 'B. Saka' },
+      ],
+    });
+    const { markers } = buildTimeline(assisted);
+    assert.equal(markers[0]!.label, '1-0 — B. Saka (Assist by M. Ødegaard)');
+    assert.equal(markers[1]!.label, '1-1 — W. Saliba (OG)');
+  });
+
   it('stops at the live clock instead of extrapolating into the future', () => {
     const live = makeSnapshot({
       status: { started: true, finished: false, cancelled: false, liveMinute: 63 },

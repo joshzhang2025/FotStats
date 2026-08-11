@@ -35,11 +35,11 @@ function payload(overrides: Partial<FotmobPayload> = {}): FotmobPayload {
       matchFacts: {
         events: {
           events: [
-            { type: 'Goal', time: 23, isHome: true },
+            { type: 'Goal', time: 23, isHome: true, nameStr: 'M. Salah' },
             { type: 'Card', time: 40, isHome: false, card: 'Yellow' },
-            { type: 'Goal', time: 58, isHome: false },
+            { type: 'Goal', time: 58, isHome: false, nameStr: 'E. Haaland' },
             { type: 'Card', time: 72, isHome: false, card: 'Red' },
-            { type: 'Goal', time: 90, timeAdded: 3, isHome: true },
+            { type: 'Goal', time: 90, timeAdded: 3, isHome: true, nameStr: 'D. Núñez' },
           ],
         },
       },
@@ -70,6 +70,63 @@ describe('extractSnapshot', () => {
     const s = extractSnapshot(payload());
     assert.deepEqual(s.goals.map((g) => g.minute), [23, 58, 93]);
     assert.equal(s.shots.at(-1)!.minute, 93);
+  });
+
+  it('reads the scorer, preferring the string FotMob itself renders', () => {
+    const p = payload();
+    p.content!.matchFacts!.events!.events = [
+      { type: 'Goal', time: 23, isHome: true, nameStr: 'M. Salah', fullName: 'Mohamed Salah' },
+      { type: 'Goal', time: 58, isHome: false, player: { id: 7, name: 'Erling Haaland' } },
+      { type: 'Goal', time: 90, timeAdded: 3, isHome: true, fullName: 'Darwin Núñez' },
+    ];
+    const s = extractSnapshot(p);
+    assert.deepEqual(s.goals.map((g) => g.scorer), ['M. Salah', 'Erling Haaland', 'Darwin Núñez']);
+    assert.equal(s.warnings.filter((w) => w.includes('player name')).length, 0);
+  });
+
+  it('reads the assist where the competition has one', () => {
+    const p = payload();
+    p.content!.matchFacts!.events!.events = [
+      // FotMob phrases this field itself; only the name belongs in the model.
+      { type: 'Goal', time: 23, isHome: true, nameStr: 'M. Salah', assistStr: 'assist by T. Alexander-Arnold' },
+      { type: 'Goal', time: 58, isHome: false, nameStr: 'E. Haaland', assistantPlayer: { name: 'K. De Bruyne' } },
+      // Assists are only collected for some competitions: absent, not missing.
+      { type: 'Goal', time: 90, timeAdded: 3, isHome: true, nameStr: 'D. Núñez' },
+    ];
+    const s = extractSnapshot(p);
+    assert.deepEqual(s.goals.map((g) => g.assist), [
+      'T. Alexander-Arnold',
+      'K. De Bruyne',
+      null,
+    ]);
+    assert.deepEqual(s.warnings.filter((w) => w.includes('assist')), [], 'no assist is normal');
+  });
+
+  it('strips whichever wording the assist field arrived with', () => {
+    const p = payload();
+    p.content!.matchFacts!.events!.events = [
+      { type: 'Goal', time: 23, isHome: true, assistStr: 'Assisted by M. Ødegaard' },
+      { type: 'Goal', time: 58, isHome: false, assistStr: 'assist: K. De Bruyne' },
+      { type: 'Goal', time: 90, timeAdded: 3, isHome: true, assistStr: 'B. Saka' },
+    ];
+    assert.deepEqual(extractSnapshot(p).goals.map((g) => g.assist), [
+      'M. Ødegaard',
+      'K. De Bruyne',
+      'B. Saka',
+    ]);
+  });
+
+  it('leaves the scorer null and warns when no goal names anybody', () => {
+    const p = payload();
+    p.content!.matchFacts!.events!.events = [
+      { type: 'Goal', time: 23, isHome: true },
+      { type: 'Goal', time: 58, isHome: false },
+      { type: 'Goal', time: 90, timeAdded: 3, isHome: true },
+    ];
+    const s = extractSnapshot(p);
+    assert.deepEqual(s.goals.map((g) => g.scorer), [null, null, null]);
+    // Display-only, so extraction still succeeds — but it is a rename signal.
+    assert.ok(s.warnings.some((w) => w.includes('player name')), s.warnings.join('; '));
   });
 
   it('keeps red cards and discards yellows', () => {

@@ -27,7 +27,16 @@ export interface FotmobEvent {
   cardType?: string;
   ownGoal?: boolean;
   isOwnGoal?: boolean;
+  /** The name FotMob itself renders in match facts, e.g. "B. Saka". */
   nameStr?: string;
+  fullName?: string;
+  shortName?: string;
+  player?: { id?: number | string; name?: string };
+  /** Only populated for competitions FotMob collects assists for. */
+  assistStr?: string;
+  assistInput?: string;
+  assistantPlayer?: { id?: number | string; name?: string };
+  assist?: { name?: string };
 }
 
 export interface FotmobShot {
