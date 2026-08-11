@@ -5,7 +5,10 @@ export type MarkerKind = 'goal' | 'red';
 
 export interface TimelineMarker {
   kind: MarkerKind;
+  /** Folded minute, which is what the chart plots against. */
   minute: number;
+  /** The same instant written for a reader: "90+3". */
+  minuteLabel: string;
   isHome: boolean;
   label: string;
   /** Home win probability at that minute, so markers sit on the curve. */
@@ -18,6 +21,15 @@ export interface Timeline {
   /** Last minute actually plotted — the live clock, or full time if finished. */
   through: number;
   fullTime: number;
+}
+
+/**
+ * The clock as football writes it: a goal three minutes into stoppage at the
+ * end is "90+3", not "93". Only labels split the minute back up — everything
+ * that measures the match keeps counting football played.
+ */
+export function formatMinute(minute: number, added: number): string {
+  return added > 0 ? `${minute - added}+${added}` : `${minute}`;
 }
 
 /**
@@ -95,6 +107,7 @@ export function buildTimeline(snapshot: MatchSnapshot, upTo?: number): Timeline 
     markers.push({
       kind: 'goal',
       minute: goal.minute,
+      minuteLabel: formatMinute(goal.minute, goal.added),
       isHome: goal.isHome,
       label: `${homeScore}-${awayScore}${scorer}${goal.ownGoal ? ' (OG)' : ''}${assist}`,
       homeProb: probAt(goal.minute),
@@ -105,6 +118,7 @@ export function buildTimeline(snapshot: MatchSnapshot, upTo?: number): Timeline 
     markers.push({
       kind: 'red',
       minute: card.minute,
+      minuteLabel: formatMinute(card.minute, card.added),
       isHome: card.isHome,
       label: `Red card — ${card.isHome ? snapshot.home.name : snapshot.away.name}`,
       homeProb: probAt(card.minute),
@@ -124,7 +138,10 @@ export function nextGoalSwing(snapshot: MatchSnapshot, minute: number) {
   const withGoal = (isHome: boolean) => {
     const hypothetical: MatchSnapshot = {
       ...snapshot,
-      goals: [...snapshot.goals, { minute, isHome, ownGoal: false, scorer: null, assist: null }],
+      goals: [
+        ...snapshot.goals,
+        { minute, added: 0, isHome, ownGoal: false, scorer: null, assist: null },
+      ],
     };
     return winProb(hypothetical, minute);
   };

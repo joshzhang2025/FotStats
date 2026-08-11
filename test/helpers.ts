@@ -30,15 +30,21 @@ export const goal = (
   isHome: boolean,
   scorer: string | null = null,
   assist: string | null = null,
+  added = 0,
 ): GoalEvent => ({
   minute,
+  added,
   isHome,
   ownGoal: false,
   scorer,
   assist,
 });
 
-export const red = (minute: number, isHome: boolean): RedCardEvent => ({ minute, isHome });
+export const red = (minute: number, isHome: boolean, added = 0): RedCardEvent => ({
+  minute,
+  added,
+  isHome,
+});
 
 export const shot = (minute: number, isHome: boolean, xg: number): ShotEvent => ({
   minute,

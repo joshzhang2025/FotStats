@@ -1,0 +1,136 @@
+/*
+ * Everything that styles the card itself — the markup `view/card.ts` produces.
+ *
+ * Loaded as a stylesheet by the popup document and adopted into the overlay's
+ * shadow root, so both surfaces are styled by one file. Nothing here may assume
+ * a document: no `body`, no `:root`, and no `url(...)` (the overlay bundles this
+ * as a string, and an external reference would need web_accessible_resources).
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+.teams {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.team-name { font-weight: 600; font-size: 14px; }
+.score { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; }
+.status { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.live::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #e5484d;
+}
+
+section { margin-top: 14px; }
+h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+
+.bar {
+  display: flex;
+  height: 22px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.seg { height: 100%; }
+
+.legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.legend span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.legend b { color: var(--fg); font-variant-numeric: tabular-nums; }
+/* Ties each figure to its line in the chart. */
+.swatch { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.legend .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the next goal would be worth — subordinate to the current numbers. */
+.swing { margin-top: 10px; }
+.swing-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  opacity: .85;
+}
+.swing .legend { margin-top: 3px; justify-content: flex-start; gap: 14px; }
+
+.chart { position: relative; }
+.chart svg { display: block; overflow: visible; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.axis { fill: var(--muted); font-size: 9px; }
+/* Three probability lines share one 0-100% axis. */
+.series { stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* The part of the match still to be played, on a live chart. */
+.unplayed { fill: var(--panel); }
+.now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; }
+.marker-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; }
+/* Goal and red-card markers, in their own lane above the plot. */
+.marker-dot { stroke: var(--bg); stroke-width: 1; }
+/* Panel and seams are cut out of the ball in the page colour. */
+.ball-face { fill: var(--bg); }
+.ball-seam { stroke: var(--bg); stroke-width: .9; stroke-linecap: round; }
+.scrub { stroke: var(--muted); stroke-width: 1; }
+
+.tooltip {
+  position: absolute;
+  /* Below the marker lane: scrubbing must not hide the goals. */
+  top: 25px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: rgba(16,19,26,.92);
+  color: #fff;
+  font-size: 10.5px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+  display: none;
+}
+
+.events { margin: 8px 0 0; padding: 0; list-style: none; font-size: 11px; color: var(--muted); }
+.events li { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+/* Wide enough for a stoppage-time minute ("90+3'") without reflowing. */
+.events .min { min-width: 40px; flex: none; color: var(--fg); font-variant-numeric: tabular-nums; }
+/* Scorer names vary in length; clip rather than wrap the row. */
+.events .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+footer {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.warn {
+  margin-top: 6px;
+  color: #d97706;
+  font-size: 10.5px;
+  line-height: 1.5;
+  /* Diagnostics describe the payload's actual shape — they need to wrap and be
+     selectable so they can be copied out. */
+  overflow-wrap: anywhere;
+  user-select: text;
+}

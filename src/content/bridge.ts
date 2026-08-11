@@ -1,6 +1,7 @@
 import { extractSnapshot } from '../model/extract.ts';
 import type { FotmobPayload } from '../types/fotmob.ts';
 import { CHANNEL, type PagePayloadMessage } from '../shared/protocol.ts';
+import { notifyWorker } from '../shared/runtime.ts';
 
 /**
  * ISOLATED-world bridge.
@@ -17,32 +18,6 @@ import { CHANNEL, type PagePayloadMessage } from '../shared/protocol.ts';
 let lastRaw: unknown = null;
 let lastMatchId: string | null = null;
 
-/**
- * Reloading the extension orphans the content scripts already running in open
- * tabs: their `chrome.runtime` handle is dead, and using it throws
- * "Extension context invalidated" *synchronously* — so a `.catch()` on the
- * returned promise never sees it. Detect the orphaned state and go quiet
- * instead of logging on every poll until the tab is reloaded.
- */
-let orphaned = false;
-
-function send(message: unknown): void {
-  if (orphaned) return;
-  // `chrome.runtime.id` is undefined once the context is gone.
-  if (!chrome.runtime?.id) {
-    orphaned = true;
-    return;
-  }
-  try {
-    void chrome.runtime.sendMessage(message).catch(() => {
-      // The worker sleeps between messages; a rejected send just means it was
-      // waking up and the next poll will land.
-    });
-  } catch {
-    orphaned = true;
-  }
-}
-
 function isPagePayload(data: unknown): data is PagePayloadMessage {
   if (typeof data !== 'object' || data === null) return false;
   if ((data as { channel?: unknown }).channel !== CHANNEL) return false;
@@ -57,7 +32,7 @@ window.addEventListener('message', (event) => {
   if (!isPagePayload(event.data)) return;
 
   if (event.data.kind === 'standings') {
-    send({ type: 'standings', rows: event.data.rows });
+    notifyWorker({ type: 'standings', rows: event.data.rows });
     return;
   }
 
@@ -71,7 +46,7 @@ window.addEventListener('message', (event) => {
     lastRaw = payload;
     lastMatchId = snapshot.matchId;
 
-    send({ type: 'snapshot', snapshot });
+    notifyWorker({ type: 'snapshot', snapshot });
   } catch (error) {
     console.warn('[fotstats] failed to reduce payload', error);
   }

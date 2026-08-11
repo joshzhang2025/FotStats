@@ -1,0 +1,30 @@
+/*
+ * Colour tokens, shared by the popup document and the in-page overlay.
+ *
+ * The selector is `:root, :host` and must stay that way. A ShadowRoot is not an
+ * element, so `:root` never matches inside one — tokens declared on `:root`
+ * alone would leave every colour in the overlay resolving to its initial value.
+ * `:host` is valid everywhere and simply never matches outside a shadow tree,
+ * so one file serves both surfaces.
+ */
+
+:root,
+:host {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #10131a;
+  --muted: #626a7a;
+  --line: #e3e6ec;
+  --panel: #f6f7f9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  :host {
+    --bg: #14161c;
+    --fg: #eef1f6;
+    --muted: #98a1b3;
+    --line: #262a34;
+    --panel: #1b1e26;
+  }
+}

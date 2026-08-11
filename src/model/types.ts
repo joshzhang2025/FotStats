@@ -9,7 +9,14 @@ export interface TeamRef {
 }
 
 export interface GoalEvent {
+  /** Minutes played, with added time folded in: 90 +3 is minute 93. */
   minute: number;
+  /**
+   * How much of that minute was added time, so the clock can be written the
+   * way football writes it. Kept because the fold cannot be undone: 46 is 45+1
+   * in first-half stoppage and plain 46 just after the restart.
+   */
+  added: number;
   isHome: boolean;
   /** Own goals still credit the scoring side; recorded for display only. */
   ownGoal: boolean;
@@ -27,6 +34,8 @@ export interface GoalEvent {
 
 export interface RedCardEvent {
   minute: number;
+  /** See {@link GoalEvent.added}. */
+  added: number;
   isHome: boolean;
 }
 

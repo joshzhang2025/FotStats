@@ -1,0 +1,90 @@
+/*
+ * The overlay's own chrome — everything that only applies when the card is
+ * floating over somebody else's page. Adopted into a shadow root, never loaded
+ * as a document stylesheet, so none of it can reach FotMob's own markup.
+ */
+
+:host {
+  /* Must be first. A shadow boundary blocks nothing that inherits — font,
+     colour, line-height, letter-spacing all cross it from FotMob's `body`. */
+  all: initial;
+
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* Above their header and nav, with headroom left so a page modal or a cookie
+     banner can still legitimately sit above us. Never INT_MAX. */
+  z-index: 2147483000;
+  /* The page underneath stays clickable; only the card itself takes input. */
+  pointer-events: none;
+  /* Our relayouts cannot dirty FotMob's layout tree. */
+  contain: layout style;
+  color-scheme: light dark;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+}
+
+.pill,
+.card {
+  pointer-events: auto;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
+  /* If it ever scrolls internally, it must not chain into the page's scroll. */
+  overscroll-behavior: contain;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 190px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+.pill .bar { flex: 1; height: 8px; border-radius: 4px; }
+.pill-score { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; }
+.pill-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 26px;
+}
+
+.card {
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px 14px 14px;
+}
+/* The SVG carries a fixed width attribute for the popup; its viewBox does the
+   real work, so letting it fill the card keeps hover correct at any size. */
+.card .chart svg { width: 100%; height: auto; }
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  margin: -4px -6px 2px 0;
+}
+.icon {
+  all: unset;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.icon:hover { color: var(--fg); background: var(--panel); }
+.icon:focus-visible { outline: 2px solid var(--muted); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pill, .card { transition: box-shadow .12s ease; }
+}
+
+/* We are not part of the page's content, and should not be part of its paper. */
+@media print {
+  :host { display: none !important; }
+}

@@ -9,7 +9,7 @@ import {
   renderTimeline,
   resolveColors,
   xForMinute,
-} from '../src/popup/chart.ts';
+} from '../src/view/chart.ts';
 import { goal, makeSnapshot, red } from './helpers.ts';
 
 /**

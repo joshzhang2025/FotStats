@@ -188,7 +188,8 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
 
   if (message?.type === 'get-snapshot') {
     void (async () => {
-      sendResponse(await resolveSnapshot(message.tabId));
+      // A content script does not know its own tab id, but the sender does.
+      sendResponse(await resolveSnapshot(message.tabId ?? sender.tab?.id));
     })();
     return true; // response is async
   }
@@ -199,7 +200,10 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendRespo
 /**
  * The popup resolves its own tab and passes the id, rather than letting the
  * worker guess: `currentWindow` from a service worker means "last focused",
- * which is not reliably the window the popup was opened from.
+ * which is not reliably the window the popup was opened from. The in-page
+ * overlay has the opposite problem — it cannot know its tab id at all — so it
+ * sends none and the worker reads `sender.tab`. Both paths land here, which is
+ * what lets the overlay inherit the historical table and the standings fetch.
  */
 async function resolveSnapshot(tabId?: number): Promise<SnapshotResponse> {
   let tab: chrome.tabs.Tab | undefined;

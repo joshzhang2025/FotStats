@@ -185,3 +185,25 @@ if (document.readyState === 'loading') {
 } else {
   readNextData();
 }
+
+// --- client-side navigation -------------------------------------------------
+/**
+ * FotMob is a client-routed app: moving between matches never reloads the page,
+ * so nothing here runs again on its own. That leaves `standingsFound` latched
+ * for the life of the tab, and the second competition you visit keeps the
+ * first one's table.
+ *
+ * It went unnoticed while the popup was the only surface — you opened it once
+ * per match. The in-page overlay makes match-to-match browsing the normal case,
+ * where it would show up as a quietly wrong baseline.
+ *
+ * Polling the URL rather than patching `history.pushState`: this file already
+ * patches enough of the page, and a string compare on a timer cannot break it.
+ */
+let lastHref = window.location.href;
+setInterval(() => {
+  if (window.location.href === lastHref) return;
+  lastHref = window.location.href;
+  standingsFound = false;
+  readNextData();
+}, 1_000);

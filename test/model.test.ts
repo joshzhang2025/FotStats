@@ -260,7 +260,7 @@ describe('timeline', () => {
     const named = makeSnapshot({
       goals: [
         goal(12, true, 'B. Saka'),
-        { minute: 70, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: null },
+        { minute: 70, added: 0, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: null },
       ],
     });
     const { markers } = buildTimeline(named);
@@ -273,12 +273,27 @@ describe('timeline', () => {
       goals: [
         goal(12, true, 'B. Saka', 'M. Ødegaard'),
         // An own goal is nobody's assist, whatever the payload claims.
-        { minute: 70, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: 'B. Saka' },
+        { minute: 70, added: 0, isHome: false, ownGoal: true, scorer: 'W. Saliba', assist: 'B. Saka' },
       ],
     });
     const { markers } = buildTimeline(assisted);
     assert.equal(markers[0]!.label, '1-0 — B. Saka (Assist by M. Ødegaard)');
     assert.equal(markers[1]!.label, '1-1 — W. Saliba (OG)');
+  });
+
+  it('writes stoppage time the way football writes it', () => {
+    // 45+1 and 90+3, plotted at 46 and 93 where the model needs them.
+    const stoppage = makeSnapshot({
+      goals: [goal(46, true, 'B. Saka', null, 1), goal(93, false, 'E. Haaland', null, 3)],
+      redCards: [red(70, false)],
+    });
+    const { markers } = buildTimeline(stoppage);
+    assert.deepEqual(
+      markers.map((m) => m.minuteLabel),
+      ['45+1', '70', '90+3'],
+    );
+    // The plotting minute is untouched: it is how much football has been played.
+    assert.deepEqual(markers.map((m) => m.minute), [46, 70, 93]);
   });
 
   it('stops at the live clock instead of extrapolating into the future', () => {

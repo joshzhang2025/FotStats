@@ -23,12 +23,20 @@ const num = (v: unknown): number | null => {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Minute of an event, folding added time in (90 +3 becomes 93). */
-function eventMinute(ev: FotmobEvent): number | null {
+/**
+ * When an event happened, both ways round.
+ *
+ * `minute` folds added time in (90 +3 becomes 93) because that is how much
+ * football has been played, which is what the model needs. `added` is kept
+ * alongside it because the fold is not reversible: minute 46 is 45+1 in first
+ * half stoppage and plain 46 early in the second, and nothing downstream can
+ * tell which without being told.
+ */
+function eventTiming(ev: FotmobEvent): { minute: number; added: number } | null {
   const base = num(ev.time) ?? num(ev.min);
   if (base === null) return null;
-  const added = num(ev.timeAdded) ?? num(ev.overloadTime) ?? 0;
-  return base + added;
+  const added = Math.max(0, num(ev.timeAdded) ?? num(ev.overloadTime) ?? 0);
+  return { minute: base + added, added };
 }
 
 /** First of several candidate fields that actually holds a name. */
@@ -267,13 +275,20 @@ function findEvents(payload: FotmobPayload): FotmobEvent[] {
   return best;
 }
 
+/**
+ * The live clock, in the same folded minutes the events use: "90+5'" is 95.
+ *
+ * Reading only the leading number leaves the clock stuck on 90 for the whole of
+ * stoppage time, and that is the worst place to lose minutes: the game-state
+ * adjustments sharpen as the match runs out, so a side protecting a lead would
+ * be priced with most of five minutes still to survive right up to the whistle.
+ */
 function parseLiveMinute(payload: FotmobPayload): number | null {
   const short = payload.header?.status?.liveTime?.short;
-  if (typeof short === 'string') {
-    const match = /(\d+)/.exec(short);
-    if (match) return Number(match[1]);
-  }
-  return null;
+  if (typeof short !== 'string') return null;
+  const match = /(\d+)(?:\s*\+\s*(\d+))?/.exec(short);
+  if (!match) return null;
+  return Number(match[1]!) + Number(match[2] ?? 0);
 }
 
 export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): MatchSnapshot {
@@ -312,8 +327,9 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
   let maxEventMinute = 0;
 
   for (const ev of rawEvents) {
-    const minute = eventMinute(ev);
-    if (minute === null) continue;
+    const timing = eventTiming(ev);
+    if (timing === null) continue;
+    const { minute, added } = timing;
     const type = String(ev.type ?? '').toLowerCase();
     const isHome = ev.isHome === true;
     maxEventMinute = Math.max(maxEventMinute, minute);
@@ -321,6 +337,7 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
     if (type.includes('goal')) {
       goals.push({
         minute,
+        added,
         isHome,
         ownGoal: ev.ownGoal === true || ev.isOwnGoal === true,
         scorer: eventPlayer(ev),
@@ -328,7 +345,7 @@ export function extractSnapshot(payload: FotmobPayload, matchIdHint?: string): M
       });
     } else if (type.includes('card')) {
       const card = String(ev.card ?? ev.cardType ?? '').toLowerCase();
-      if (card.includes('red')) redCards.push({ minute, isHome });
+      if (card.includes('red')) redCards.push({ minute, added, isHome });
     }
   }
 

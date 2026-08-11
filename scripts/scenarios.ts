@@ -35,6 +35,7 @@ const snapshot = (overrides: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
 
 const goal = (minute: number, isHome: boolean) => ({
   minute,
+  added: 0,
   isHome,
   ownGoal: false,
   scorer: null,

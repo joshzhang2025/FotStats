@@ -72,6 +72,11 @@ describe('extractSnapshot', () => {
     assert.equal(s.shots.at(-1)!.minute, 93);
   });
 
+  it('keeps the added time it folded in, since the fold is one-way', () => {
+    const s = extractSnapshot(payload());
+    assert.deepEqual(s.goals.map((g) => g.added), [0, 0, 3]);
+  });
+
   it('reads the scorer, preferring the string FotMob itself renders', () => {
     const p = payload();
     p.content!.matchFacts!.events!.events = [
@@ -132,7 +137,7 @@ describe('extractSnapshot', () => {
   it('keeps red cards and discards yellows', () => {
     const s = extractSnapshot(payload());
     assert.equal(s.redCards.length, 1);
-    assert.deepEqual(s.redCards[0], { minute: 72, isHome: false });
+    assert.deepEqual(s.redCards[0], { minute: 72, added: 0, isHome: false });
   });
 
   it('attributes shots to the right side by team id', () => {
@@ -401,6 +406,21 @@ describe('degraded payloads', () => {
     p.header!.status = { started: true, finished: false, liveTime: { short: "67'" } };
     const s = extractSnapshot(p);
     assert.equal(s.status.liveMinute, 67);
+  });
+
+  it('folds stoppage time into the live clock, as the events do', () => {
+    // Stuck on 90 through all of stoppage, the model would think a side
+    // protecting a lead still had five minutes to survive at the whistle.
+    const live = (short: string) => {
+      const p = payload();
+      p.general!.finished = false;
+      p.header!.status = { started: true, finished: false, liveTime: { short } };
+      return extractSnapshot(p).status.liveMinute;
+    };
+
+    assert.equal(live("90+5'"), 95);
+    assert.equal(live("45+2'"), 47);
+    assert.equal(live('HT'), null, 'a clock with no minute in it is not a minute');
   });
 });
 

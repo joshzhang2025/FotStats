@@ -26,6 +26,13 @@
       "run_at": "document_start",
       "world": "ISOLATED",
       "all_frames": false
+    },
+    {
+      "matches": ["https://www.fotmob.com/*"],
+      "js": ["overlay.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED",
+      "all_frames": false
     }
   ]
 }

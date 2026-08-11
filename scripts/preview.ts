@@ -13,11 +13,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildTimeline } from '../src/model/replay.ts';
 import type { MatchSnapshot } from '../src/model/types.ts';
 import { PARAMS } from '../src/model/params.ts';
-import { winProbDetailed } from '../src/model/winprob.ts';
-import { renderBar, renderEvents, renderTimeline, resolveColors } from '../src/popup/chart.ts';
+import { buildView, renderCard } from '../src/view/card.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -33,6 +31,7 @@ const snapshot = (overrides: Partial<MatchSnapshot> = {}): MatchSnapshot => ({
   redCards: [],
   shots: [],
   table: null,
+  tableAsOfDay: null,
   standingsUrl: null,
   fullTime: PARAMS.expectedFullTime,
   kickoffUtc: null,
@@ -46,7 +45,8 @@ const goal = (
   isHome: boolean,
   scorer: string | null = null,
   assist: string | null = null,
-) => ({ minute, isHome, ownGoal: false, scorer, assist });
+  added = 0,
+) => ({ minute, added, isHome, ownGoal: false, scorer, assist });
 
 const cases: Array<{ title: string; snapshot: MatchSnapshot; upTo?: number }> = [
   {
@@ -81,13 +81,14 @@ const cases: Array<{ title: string; snapshot: MatchSnapshot; upTo?: number }> = 
         goal(19, false),
         goal(55, true),
         goal(71, true),
-        goal(90, true),
+        // A winner in stoppage time, listed as 90+3 but plotted at 93.
+        goal(93, true, null, null, 3),
       ],
     }),
   },
   {
     title: 'Red card on 20′, still 0–0',
-    snapshot: snapshot({ redCards: [{ minute: 20, isHome: true }] }),
+    snapshot: snapshot({ redCards: [{ minute: 20, added: 0, isHome: true }] }),
   },
   {
     title: 'Distinguishable kit colours (kept as-is)',
@@ -105,29 +106,22 @@ const cases: Array<{ title: string; snapshot: MatchSnapshot; upTo?: number }> = 
   },
 ];
 
-// Reuse the popup's stylesheet so the preview cannot drift from the real thing.
-const popupHtml = readFileSync(join(root, 'public/popup.html'), 'utf8');
-const css = /<style>([\s\S]*?)<\/style>/.exec(popupHtml)?.[1] ?? '';
+// The real stylesheets, so the preview cannot drift from what ships. Read as
+// files rather than scraped out of popup.html, which could silently yield ''.
+const css = [
+  readFileSync(join(root, 'src/view/theme.css'), 'utf8'),
+  readFileSync(join(root, 'src/view/card.css'), 'utf8'),
+].join('\n');
 
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-
+// Exactly what both surfaces render, so the preview shows the real thing rather
+// than a copy of it.
 const panels = cases
   .map(({ title, snapshot: s, upTo }) => {
-    const minute = upTo ?? s.fullTime;
-    const detail = winProbDetailed(s, minute);
-    const timeline = buildTimeline(s, upTo);
-    const colors = resolveColors(s);
+    const view = buildView(s, upTo ?? s.fullTime);
     return `
       <div class="panel">
         <h3>${title}</h3>
-        ${renderBar(detail, colors)}
-        <div class="legend">
-          <span><i class="swatch" style="background:${colors.home}"></i><span class="name">${s.home.name}</span> <b>${pct(detail.home)}</b></span>
-          <span><i class="swatch" style="background:#64748b"></i>Draw <b>${pct(detail.draw)}</b></span>
-          <span><i class="swatch" style="background:${colors.away}"></i><span class="name">${s.away.name}</span> <b>${pct(detail.away)}</b></span>
-        </div>
-        <div class="chart">${renderTimeline(timeline, colors)}</div>
-        ${renderEvents(timeline, { home: s.home.name, away: s.away.name }, colors)}
+        ${renderCard(s, view, { footer: true })}
       </div>`;
   })
   .join('');
@@ -136,7 +130,15 @@ const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>FotStats chart preview</title>
 <style>
 ${css}
-body { width: auto; max-width: none; padding: 20px; }
+/* The popup's own shell rules live in popup.html; the preview needs the same
+   base so the cards sit on the right background. */
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
 .grid-wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 22px; }
 .panel { width: 380px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
 .panel h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; }

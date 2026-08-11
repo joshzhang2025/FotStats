@@ -7,7 +7,9 @@ Two features:
 - **Live win probability** — P(home win / draw / away win), updating as the match plays.
 - **"How did we get here"** — win probability across every minute, with goal and red-card markers.
 
-Open a specific match on fotmob.com, then open the extension popup.
+Open a specific match on fotmob.com. A small pill appears in the corner of the page with the score and
+the current probabilities; click it for the full card. The extension popup shows the same thing plus
+diagnostics.
 
 ## Install
 
@@ -34,8 +36,14 @@ ISOLATED world (bridge.ts)      reduces the payload to a compact MatchSnapshot
         │  chrome.runtime.sendMessage
 service worker (worker.ts)      caches the snapshot per tab in storage.session
         │  request/response
-popup                           runs the model, draws the chart
+popup  +  overlay.ts            run the model, draw the chart
 ```
+
+Both surfaces ask the worker the same question and render with the same code
+([`src/view/`](src/view/)), so they cannot disagree. The popup passes its own tab id, because
+`currentWindow` from a service worker means "last focused"; the overlay passes none and the worker
+reads `sender.tab`. Everything the worker does in between — substituting a point-in-time table,
+fetching standings — happens for both.
 
 The one rule that matters: **never reproduce a FotMob request, only observe one.** A change to
 their signing scheme cannot break us. Two consequences fall out of that:
@@ -45,7 +53,40 @@ their signing scheme cannot break us. Two consequences fall out of that:
   fotmob.com itself.
 
 Cold start (extension just reloaded, or a finished match that never polls) is covered by reading
-the payload FotMob server-renders into `__NEXT_DATA__`.
+the payload FotMob server-renders into `__NEXT_DATA__`. FotMob is client-routed, so moving between
+matches never reloads the page and nothing re-runs on its own; both content scripts poll
+`location.href` once a second to notice. That is also the only navigation signal available to us —
+patching `history.pushState` from the ISOLATED world intercepts nothing, because the page's own calls
+run in a different JS realm with its own prototypes.
+
+### The overlay
+
+[`src/content/overlay.ts`](src/content/overlay.ts) puts the card on the match page itself. It applies
+the same rule as the interceptor, one layer up: **never read, modify, or depend on FotMob's DOM.** It
+appends one `<fotstats-overlay>` element to `body`, outside their React tree, and draws inside a
+closed shadow root. There is nothing of theirs to break.
+
+What keeps it from being in the way:
+
+- **It renders nothing at all unless there is real data.** No spinner, no "waiting" box, no empty
+  frame — off a match page or before the payload lands, it unmounts. The popup has empty states
+  because you opened it deliberately and are owed an answer; an overlay you did not ask for owes the
+  page silence.
+- **The host is `pointer-events: none`** and only the card takes input, so nothing on FotMob becomes
+  unclickable. `contain: layout style` keeps our reflows out of their layout tree, and the `z-index`
+  leaves headroom above us for a genuine page modal.
+- **No listeners on their document or window for input** — no key handlers, no `preventDefault`, no
+  focus stealing. Only `visibilitychange`, `popstate` and `pageshow`.
+- **A hidden tab polls not at all,** and a finished match stops for good. Every request wakes the MV3
+  service worker, so six background FotMob tabs must not keep it alive.
+- **Markup is only rewritten when something changed** ([`renderSignature`](src/shared/schedule.ts)).
+  Rebuilding on a tick that changed nothing drops the user's text selection mid-hover, on a page that
+  is not ours to interrupt.
+
+Styling is delivered as constructed `CSSStyleSheet`s rather than a `<style>` element: CSP has no hook
+for CSSOM-built sheets at all, so it keeps working whatever policy FotMob adds later. The theme
+tokens are declared on `:root, :host` — a `ShadowRoot` is not an element, so `:root` alone never
+matches inside one, and there is a test pinning that.
 
 FotMob renames fields periodically. All of that is absorbed by [`src/model/extract.ts`](src/model/extract.ts) —
 the only module that knows their field names. It records a `warnings` entry for anything it
@@ -294,13 +335,33 @@ stop at the current minute rather than running to 90.
 **5. FotMob itself must be unaffected.** Browse the site normally with the extension on. Scores,
 lineups, and stats must all still load — the interception is only correct if it is invisible.
 
+### The overlay checklist
+
+The overlay's remaining risks are all things a unit test cannot see: shadow attachment, stylesheet
+adoption, stacking, pointer pass-through and real client-side navigation. The pure parts
+(`nextPollDelay`, `renderSignature`, `overlayRoute`, the markup, the stylesheet contract) are covered
+by `npm test`; these are not, so walk them.
+
+1. **Live match** — the pill appears bottom-right, expands on click, the chart hover works inside it,
+   and the numbers move within ~30s.
+2. **Finished match** — renders once, then stops polling. The service-worker console should go quiet.
+3. **Pre-match, a league page, the homepage** — *nothing renders at all.* Not an empty frame.
+4. **Navigation** — match → match, match → homepage → match, and browser back/forward. The card
+   follows, and the baseline in the popup footer changes with the competition (that last one is the
+   `standingsFound` latch, which is what the interceptor's URL poll exists for).
+5. **Persistence** — expand, reload: still expanded. Dismiss with `✕`: gone until you navigate.
+6. **Nothing is blocked** — click through FotMob normally with the card up. Their nav, modals and
+   links must all still work, including directly around the card.
+7. **Edge cases** — a 375px-wide window (defaults to collapsed), print preview (no card on the page),
+   reloading the extension with a tab open (no dead card left behind), popup and overlay open at once.
+
 ### Where to look when something is wrong
 
 Three separate consoles, and the right one depends on the layer:
 
 | Layer | Console |
 | --- | --- |
-| `interceptor.ts`, `bridge.ts` | DevTools on the FotMob page |
+| `interceptor.ts`, `bridge.ts`, `overlay.ts` | DevTools on the FotMob page |
 | `worker.ts` | `chrome://extensions` → FotStats → **service worker** |
 | `popup.ts` | right-click inside the popup → **Inspect** |
 
@@ -330,11 +391,15 @@ plumbing — reach for `npm run scenarios`.
 
 ```
 public/manifest.json          MV3 — MAIN + ISOLATED content scripts
-public/popup.html             popup shell and styles
+public/popup.html             popup shell (card styles live in src/view/)
 src/inject/interceptor.ts     MAIN world: fetch/XHR patch, __NEXT_DATA__ fallback
 src/content/bridge.ts         ISOLATED: payload -> snapshot -> worker
+src/content/overlay.ts        ISOLATED: the in-page card, in a shadow root
+src/content/overlay.css       overlay-only chrome: host, pill, print, mobile
 src/bg/worker.ts              per-tab snapshot cache
 src/shared/protocol.ts        message shapes, match-id parsing
+src/shared/runtime.ts         talking to the worker, and surviving an orphaned context
+src/shared/schedule.ts        when to poll, and when a redraw is worth doing
 src/types/fotmob.ts           raw payload shapes (imported only by extract.ts)
 src/model/extract.ts          the only file that knows FotMob's field names
 src/model/history.ts          league table rebuilt as of a given day
@@ -343,7 +408,12 @@ src/model/params.ts           every tunable constant
 src/model/poisson.ts          pmf, outcome grid, Dixon-Coles
 src/model/winprob.ts          winProb(snapshot, minute) — pure
 src/model/replay.ts           minute-by-minute driver, timeline markers
-src/popup/                    popup logic and hand-rolled SVG chart
+src/view/chart.ts             hand-rolled SVG: timeline, bar, goal summary
+src/view/card.ts              the card both surfaces render
+src/view/scrub.ts             chart hover, scoped to a root so it works in a shadow
+src/view/theme.css            colour tokens, on :root *and* :host
+src/view/card.css             card styles, shared by popup and overlay
+src/popup/popup.ts            popup shell: empty states, fixture capture
 public/data/pl-history.json   generated: PL results, one entry per season
 scripts/fetch-history.ts      regenerates the above from football-data.co.uk
 scripts/tune-prior.ts         sweeps the previous-season prior against it
@@ -351,10 +421,8 @@ scripts/tune-prior.ts         sweeps the previous-season prior against it
 
 ## Not built yet
 
-`nextGoalSwing()` in [`src/model/replay.ts`](src/model/replay.ts) already computes "a goal here takes
-them from 20% to 48%" — it just isn't surfaced. The luck meter (score vs. cumulative xG) needs no new
-model work either; both values are already on the snapshot. Table impact would need standings data
-the model does not currently keep.
+The luck meter (score vs. cumulative xG) needs no new model work — both values are already on the
+snapshot. Table impact would need standings data the model does not currently keep.
 
 Two more that the historical results file has now put within reach:
 

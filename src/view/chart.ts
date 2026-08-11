@@ -228,7 +228,7 @@ export function renderTimeline(timeline: Timeline, colors: { home: string; away:
       ${polylines}
       ${endDots}
       ${timeLabels}
-      <line id="scrub" x1="0" y1="${plotTop}" x2="0" y2="${plotBottom}" class="scrub" style="display:none"/>
+      <line data-fotstats="scrub" x1="0" y1="${plotTop}" x2="0" y2="${plotBottom}" class="scrub" style="display:none"/>
     </svg>`;
 }
 
@@ -270,7 +270,7 @@ export function renderEvents(
       // screen reader, and not everyone separates two hues reliably.
       return (
         `<li title="${esc(team)}">` +
-        `<span class="min">${marker.minute}'</span>` +
+        `<span class="min">${marker.minuteLabel}'</span>` +
         `<i class="swatch" style="background:${color}"></i>` +
         `<span class="what">${marker.kind === 'goal' ? '⚽' : '\u{1f7e5}'} ${esc(marker.label)}</span>` +
         `</li>`
