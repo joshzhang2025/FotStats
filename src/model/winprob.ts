@@ -68,8 +68,10 @@ export interface Baseline {
    * but for a past match it is the season as it *finished*, which includes the
    * result being predicted. `table-historical` is the same shape rebuilt from
    * results up to the day of kickoff, and is the honest one for past matches.
+   * `table-prior` is last season's rates carried forward, for the opening
+   * weeks when this season has no table to rebuild.
    */
-  source: 'table' | 'table-historical' | 'league-average';
+  source: 'table' | 'table-historical' | 'table-prior' | 'league-average';
   /** Why the table was not used, when one was available but unusable. */
   reason?: string;
 }
@@ -127,7 +129,11 @@ export function prematchBaseline(snapshot: MatchSnapshot): Baseline {
   return {
     home: clamp(fallback.homeLambda * homeAtk * awayDef, minLambda, maxLambda),
     away: clamp(fallback.awayLambda * awayAtk * homeDef, minLambda, maxLambda),
-    source: snapshot.tableAsOfDay === null ? 'table' : 'table-historical',
+    source: snapshot.tablePriorOnly
+      ? 'table-prior'
+      : snapshot.tableAsOfDay === null
+        ? 'table'
+        : 'table-historical',
   };
 }
 

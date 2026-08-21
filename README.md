@@ -96,6 +96,15 @@ Those are `promotedAttack` and `promotedDefence`.
 best-scoring 15**: the optimum is flat and the two halves of the archive pick 20 and 12, so the peak
 is noise. 10 is the smallest value inside both error bands, at a cost of 0.0004 Brier.
 
+Between a season ending in May and the archive being regenerated, no stored season covers today and
+FotMob's live table is all zeroes — so the model had nothing at all and priced every match on home
+advantage alone, making a promoted club at home a favourite over a title contender. There the prior
+stands on its own ([`priorOnlyTable`](src/model/history.ts)): every club enters at `priorGames`
+pseudo-matches at last season's rates, and a club the division has not seen gets the promoted
+multipliers. Since only the two sides playing are ever looked up by id, this needs no knowledge of
+who went up. It reaches forward only, and expires after `priorOnlyMaxDays` — by then the file is two
+seasons stale and the live table has a real season in it anyway.
+
 ## The model
 
 One pure function does all the work:
@@ -164,7 +173,8 @@ not a regression. Other competitions still use today's table and are flattered a
 
 Start with a **finished** Premier League match — deterministic, no waiting, exercises every path.
 The popup footer should read "Baseline from league table as of *the match date*"; if it says "league
-table form", the historical lookup declined. Then check a live match (numbers move within ~30s), a
+table form", the historical lookup declined. Early in a season it reads "last season's form (no
+table yet)", which is the prior standing alone. Then check a live match (numbers move within ~30s), a
 league page and a non-FotMob site (nothing renders, no errors), and that FotMob itself still works
 normally with the extension on.
 

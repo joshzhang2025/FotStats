@@ -78,9 +78,11 @@ export function baselineNote(snapshot: MatchSnapshot, view: View): string {
 
   return view.detail.baseline.source === 'table-historical'
     ? `Baseline from league table as of ${esc(asOf ?? 'kickoff')}`
-    : view.detail.baseline.source === 'table'
-      ? 'Baseline from league table form'
-      : `Baseline from league averages (${esc(view.detail.baseline.reason ?? 'no table data')})`;
+    : view.detail.baseline.source === 'table-prior'
+      ? "Baseline from last season's form (no table yet)"
+      : view.detail.baseline.source === 'table'
+        ? 'Baseline from league table form'
+        : `Baseline from league averages (${esc(view.detail.baseline.reason ?? 'no table data')})`;
 }
 
 /**

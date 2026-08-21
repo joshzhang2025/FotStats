@@ -83,6 +83,13 @@ export interface MatchSnapshot {
    */
   tableAsOfDay: number | null;
   /**
+   * Set when `table` is last season's rates carried forward rather than a
+   * table of this season's results — the opening weeks, before the archive
+   * covers the season in play. `tableAsOfDay` is still the kickoff day, so
+   * this is what separates "the table on that date" from "no table yet".
+   */
+  tablePriorOnly: boolean;
+  /**
    * Where the standings actually live. `matchDetails` ships only a stub for
    * `content.table` — `{ leagueId, url, … }` — pointing at a separate file.
    */

@@ -162,6 +162,7 @@ async function withHistoricalTable(snapshot: MatchSnapshot): Promise<MatchSnapsh
     ...snapshot,
     table: resolved.rows,
     tableAsOfDay: resolved.day,
+    tablePriorOnly: resolved.priorOnly,
     warnings: snapshot.warnings.filter((w) => !w.includes('standings')),
   };
 }

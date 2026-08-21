@@ -41,6 +41,7 @@ const snapshotFor = (rows: MatchSnapshot['table'], day: number): MatchSnapshot =
   shots: [],
   table: rows,
   tableAsOfDay: day,
+  tablePriorOnly: false,
   standingsUrl: null,
   fullTime: PARAMS.expectedFullTime,
   kickoffUtc: day * DAY_MS,

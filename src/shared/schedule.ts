@@ -50,6 +50,7 @@ export function renderSignature(
     snapshot.redCards.length,
     snapshot.table === null ? 0 : 1,
     snapshot.tableAsOfDay ?? -1,
+    snapshot.tablePriorOnly ? 'p' : '-',
     Math.round(xg * 100),
   ].join('|');
 }

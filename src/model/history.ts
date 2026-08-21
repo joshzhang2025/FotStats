@@ -135,21 +135,27 @@ export function seasonForDay(history: History, day: number): HistorySeason | nul
   return history.seasons[seasonIndexForDay(history, day)] ?? null;
 }
 
+/** First and last day carried by a season, or null when it has no results. */
+function seasonRange(season: HistorySeason): { first: number; last: number } | null {
+  if (!season.results.length) return null;
+  let first = Infinity;
+  let last = -Infinity;
+  for (const [d] of season.results) {
+    if (d < first) first = d;
+    if (d > last) last = d;
+  }
+  return { first, last };
+}
+
 /** Index of the season covering `day`, or -1. */
 function seasonIndexForDay(history: History, day: number): number {
   for (let i = 0; i < history.seasons.length; i++) {
-    const season = history.seasons[i]!;
-    if (!season.results.length) continue;
-    let first = Infinity;
-    let last = -Infinity;
-    for (const [d] of season.results) {
-      if (d < first) first = d;
-      if (d > last) last = d;
-    }
+    const range = seasonRange(history.seasons[i]!);
+    if (!range) continue;
     // `last >= day` is what makes a stale current-season file disqualify
     // itself: if the download predates the match, we have no table for it and
     // the caller must fall back rather than serve a half-season.
-    if (day >= first && day <= last) return i;
+    if (day >= range.first && day <= range.last) return i;
   }
   return -1;
 }
@@ -226,6 +232,71 @@ export function tableAsOf(
 }
 
 /**
+ * A table built from last season alone, for a match this season has no results
+ * for yet.
+ *
+ * `tableAsOf` needs the current season in the archive; between May and the next
+ * regeneration there is no such season, and FotMob's live table is all zeroes.
+ * The model then has nothing to separate the two sides and prices the match on
+ * home advantage alone — a promoted club at home outranks a title contender.
+ *
+ * Last season is what was actually known at kickoff on the opening weekend, so
+ * every club enters at `priorGames` pseudo-matches at its finishing rates, and
+ * a club that was not in the division gets the promoted multipliers. Because
+ * every row carries the same pseudo-games, the league average is last season's
+ * and the two sides' rates are compared on the scale they were measured on.
+ */
+export function priorOnlyTable(season: HistorySeason, match: MatchTeams): TableRow[] | null {
+  const homeKey = canonicalTeam(match.homeName);
+  const awayKey = canonicalTeam(match.awayName);
+  if (!homeKey || !awayKey) return null;
+  if (match.homeId === null || match.awayId === null) return null;
+
+  const { priorGames } = PARAMS.table;
+  if (priorGames <= 0) return null;
+
+  const prior = priorFromSeason(season);
+  if (!prior) return null;
+
+  const rowFor = (team: string, teamId: number): TableRow => {
+    const rates = priorRates(prior, team);
+    return {
+      teamId,
+      played: priorGames,
+      goalsFor: rates.scored * priorGames,
+      goalsAgainst: rates.conceded * priorGames,
+    };
+  };
+
+  // Only these two are ever looked up by id, and either may be promoted and so
+  // absent from `season.teams` — which is precisely the case worth pricing.
+  const rows: TableRow[] = [rowFor(homeKey, match.homeId), rowFor(awayKey, match.awayId)];
+
+  // The rest feed the league-average denominator only, so they keep the
+  // synthetic negative ids `tableAsOf` uses. Skipping the two above matters:
+  // counted twice they would pull the average toward themselves.
+  for (let i = 0; i < season.teams.length; i++) {
+    const team = season.teams[i]!;
+    if (team === homeKey || team === awayKey) continue;
+    rows.push(rowFor(team, -(i + 1)));
+  }
+
+  return rows.length >= 4 ? rows : null;
+}
+
+export interface HistoricalTable {
+  rows: TableRow[];
+  day: number;
+  /**
+   * True when the archive had no results for this season at all and the rows
+   * are last season's rates carried forward, rather than a table folded up to
+   * `day`. The UI says which, because they are different claims: one is what
+   * this season has shown, the other is what the previous one did.
+   */
+  priorOnly: boolean;
+}
+
+/**
  * Full lookup: results file + kickoff -> the table that was true at kickoff.
  *
  * Null whenever any link in the chain is missing, which the worker treats as
@@ -236,12 +307,12 @@ export function historicalTable(
   leagueId: number | null,
   kickoffUtc: number | null,
   match: MatchTeams,
-): { rows: TableRow[]; day: number } | null {
+): HistoricalTable | null {
   if (leagueId !== history.leagueId || kickoffUtc === null) return null;
 
   const day = cutoffDayFor(kickoffUtc);
   const index = seasonIndexForDay(history, day);
-  if (index < 0) return null;
+  if (index < 0) return priorOnlyFallback(history, day, match);
 
   // The season before it, when the file has one. Its absence is not a failure:
   // the oldest season in the file simply has no prior to lean on, which is the
@@ -250,5 +321,31 @@ export function historicalTable(
   const prior = previous ? priorFromSeason(previous) : null;
 
   const rows = tableAsOf(history.seasons[index]!, day, match, prior);
-  return rows ? { rows, day } : null;
+  return rows ? { rows, day, priorOnly: false } : null;
+}
+
+/**
+ * What to serve for a day the archive does not reach.
+ *
+ * Only forward of the file, and only for a bounded window: a day *before* the
+ * archive is a match older than it covers, where the newest season is not a
+ * prior but a future, and folding it in would leak far worse than the live
+ * table ever did.
+ */
+function priorOnlyFallback(
+  history: History,
+  day: number,
+  match: MatchTeams,
+): HistoricalTable | null {
+  const last = history.seasons[history.seasons.length - 1];
+  if (!last) return null;
+
+  const range = seasonRange(last);
+  if (!range) return null;
+
+  const age = day - range.last;
+  if (age <= 0 || age > PARAMS.table.priorOnlyMaxDays) return null;
+
+  const rows = priorOnlyTable(last, match);
+  return rows ? { rows, day, priorOnly: true } : null;
 }

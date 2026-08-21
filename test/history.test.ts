@@ -6,6 +6,7 @@ import {
   cutoffDayFor,
   historicalTable,
   priorFromSeason,
+  priorOnlyTable,
   seasonForDay,
   tableAsOf,
   toDayIndex,
@@ -260,6 +261,114 @@ describe('season coverage', () => {
   });
 });
 
+describe('prior-only table', () => {
+  const history: History = { generatedAt: 0, leagueId: 47, seasons: [SEASON] };
+  const { priorGames, promotedAttack, promotedDefence, priorOnlyMaxDays } = PARAMS.table;
+  const prior = priorFromSeason(SEASON)!;
+  // The season in the file ends 31 August; this is the next one starting.
+  const opening = Date.parse('2025-08-16T14:00:00Z');
+
+  it('prices a season the archive has no results for at all', () => {
+    // Without this the live table is all zeroes, `prematchBaseline` bails to
+    // league averages, and the only thing separating the sides is who is home.
+    const resolved = historicalTable(history, 47, opening, MATCH);
+    assert.ok(resolved, 'the opening weekend should still get a table');
+    assert.equal(resolved.priorOnly, true);
+    assert.equal(resolved.day, cutoffDayFor(opening));
+  });
+
+  it('enters every club at the same pseudo-games', () => {
+    // Equal weight is the point: the league average the baseline divides by
+    // then reduces to the plain mean of last season's rates, so the two sides
+    // are compared on the scale their rates were measured on.
+    const rows = priorOnlyTable(SEASON, MATCH)!;
+    for (const row of rows) assert.equal(row.played, priorGames);
+
+    const total = rows.reduce((sum, r) => sum + r.goalsFor, 0);
+    const played = rows.reduce((sum, r) => sum + r.played, 0);
+    const meanRate =
+      SEASON.teams.reduce((sum, t) => sum + prior.rates.get(t)!.scored, 0) / SEASON.teams.length;
+    assert.ok(Math.abs(total / played - meanRate) < 1e-9);
+  });
+
+  it('counts each of the two sides once, not twice', () => {
+    const rows = priorOnlyTable(SEASON, MATCH)!;
+    assert.equal(rows.filter((r) => r.teamId === MATCH.homeId).length, 1);
+    assert.equal(rows.filter((r) => r.teamId === MATCH.awayId).length, 1);
+    // Four clubs in the season, and both of ours are among them.
+    assert.equal(rows.length, SEASON.teams.length);
+  });
+
+  it('treats a club the division has never seen as promoted', () => {
+    const rows = priorOnlyTable(SEASON, {
+      homeName: 'Luton',
+      homeId: 300,
+      awayName: 'Arsenal',
+      awayId: 100,
+    })!;
+
+    const luton = rows.find((r) => r.teamId === 300)!;
+    assert.ok(Math.abs(luton.goalsFor - prior.leagueRate * promotedAttack * priorGames) < 1e-9);
+    assert.ok(
+      Math.abs(luton.goalsAgainst - prior.leagueRate * promotedDefence * priorGames) < 1e-9,
+    );
+    assert.ok(luton.goalsAgainst > luton.goalsFor);
+  });
+
+  it('never reaches backwards', () => {
+    // A day before the archive is a match older than the file covers, where
+    // the newest season is not a prior but a future.
+    assert.equal(historicalTable(history, 47, Date.parse('2024-07-01T14:00:00Z'), MATCH), null);
+  });
+
+  it('expires once the prior is two seasons old', () => {
+    const stale = Date.parse('2025-11-01T14:00:00Z');
+    assert.ok(cutoffDayFor(stale) - day('2024-08-31') > priorOnlyMaxDays);
+    assert.equal(historicalTable(history, 47, stale, MATCH), null);
+  });
+
+  it('still refuses a club it cannot name', () => {
+    assert.equal(priorOnlyTable(SEASON, { ...MATCH, homeName: 'Real Madrid' }), null);
+  });
+
+  it('says it is last season, not a table of this one', () => {
+    const resolved = historicalTable(history, 47, opening, MATCH)!;
+    const snapshot = makeSnapshot({
+      home: { id: 100, name: 'Arsenal' },
+      away: { id: 200, name: 'Everton' },
+      table: resolved.rows,
+      tableAsOfDay: resolved.day,
+      tablePriorOnly: true,
+      leagueId: 47,
+    });
+    assert.equal(prematchBaseline(snapshot).source, 'table-prior');
+  });
+
+  it('makes the stronger side the favourite even at home', () => {
+    // Arsenal outscored Everton 21-3 across the stored season, so a table that
+    // carries any information at all has to price them ahead either way.
+    const resolved = historicalTable(history, 47, opening, {
+      homeName: 'Everton',
+      homeId: 200,
+      awayName: 'Arsenal',
+      awayId: 100,
+    })!;
+    const snapshot = makeSnapshot({
+      home: { id: 200, name: 'Everton' },
+      away: { id: 100, name: 'Arsenal' },
+      table: resolved.rows,
+      tableAsOfDay: resolved.day,
+      tablePriorOnly: true,
+      leagueId: 47,
+    });
+    const baseline = prematchBaseline(snapshot);
+    assert.ok(
+      baseline.away > baseline.home,
+      `away lambda ${baseline.away} should beat home ${baseline.home}`,
+    );
+  });
+});
+
 describe('baseline labelling', () => {
   const rows = tableAsOf(SEASON, day('2024-08-24'), MATCH)!;
 
@@ -379,6 +488,37 @@ describe('the generated history file', () => {
     assert.ok(
       home.played >= PARAMS.table.minPlayed,
       `effective played ${home.played} should clear the minPlayed guard`,
+    );
+  });
+
+  it('carries the newest season forward into the one after it', () => {
+    // The gap this closes: between the archive's last result in May and the
+    // file being regenerated, no stored season covers today and FotMob's live
+    // table is all zeroes. Every real season here is 38 games, so the pseudo-
+    // games are equal-weight and the average is the season's own goal rate.
+    const last = history.seasons[history.seasons.length - 1]!;
+    const lastDay = Math.max(...last.results.map(([d]) => d));
+    const prior = priorFromSeason(last)!;
+    const [, hi, ai] = last.results[0]!;
+
+    const resolved = historicalTable(history, 47, (lastDay + 90) * 86_400_000, {
+      homeName: last.teams[hi]!,
+      homeId: 1,
+      awayName: last.teams[ai]!,
+      awayId: 2,
+    });
+
+    assert.ok(resolved, 'a match after the archive ends should still price');
+    assert.equal(resolved.priorOnly, true);
+
+    const home = resolved.rows.find((r) => r.teamId === 1)!;
+    assert.ok(home.played >= PARAMS.table.minPlayed, 'must clear the minPlayed guard');
+
+    const goals = resolved.rows.reduce((sum, r) => sum + r.goalsFor, 0);
+    const played = resolved.rows.reduce((sum, r) => sum + r.played, 0);
+    assert.ok(
+      Math.abs(goals / played - prior.leagueRate) < 1e-9,
+      `league average ${goals / played} should be last season's ${prior.leagueRate}`,
     );
   });
 

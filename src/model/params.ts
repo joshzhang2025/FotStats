@@ -37,7 +37,7 @@ export const PARAMS = {
     /**
      * Last season's record, carried into this one as this many pseudo-games.
      *
-     * Only the historical path can use this — it needs a results archive. The
+     * Needs the results archive, so only the historical paths can use it. The
      * prior's weight is `priorGames / (priorGames + played)`, so it falls out
      * of the arithmetic rather than needing a decay schedule: dominant on the
      * opening weekend, about a third by midwinter, a fifth by May.
@@ -60,6 +60,22 @@ export const PARAMS = {
      */
     promotedAttack: 0.71,
     promotedDefence: 1.23,
+    /**
+     * How long after the archive's last result the prior alone may stand in
+     * for a table, in days.
+     *
+     * Between a season ending in May and the archive being regenerated, no
+     * stored season covers today, and FotMob's live table is all zeroes — so
+     * the model has nothing and prices every match on home advantage alone.
+     * Last season's rates are the honest answer there, and are exactly what
+     * was known at kickoff on the opening weekend.
+     *
+     * Bounded because a prior only stays meaningful for the season directly
+     * after it. Beyond that the file is two seasons stale, and by then the
+     * live table has a real season in it anyway — so expiring here falls back
+     * to something better, not worse.
+     */
+    priorOnlyMaxDays: 400,
     /** Attack/defence strength ratios are clamped into this band. */
     minStrength: 0.6,
     maxStrength: 1.6,
