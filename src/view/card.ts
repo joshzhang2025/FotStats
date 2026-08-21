@@ -133,7 +133,7 @@ export function renderCard(
     </section>
 
     <section>
-      <h2>How did we get here</h2>
+      <h2>Minute by minute</h2>
       <div class="chart" data-fotstats="chart">
         ${renderTimeline(timeline, colors)}
         <div class="tooltip" data-fotstats="tooltip"></div>
