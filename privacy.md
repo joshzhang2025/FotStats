@@ -1,3 +1,7 @@
+---
+title: Fotstats Privacy Policy
+---
+
 # Fotstats Privacy Policy
 
 Last updated: August 24, 2026
