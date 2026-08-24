@@ -33,4 +33,4 @@ transmitted.
 
 ## Contact
 
-Questions about this policy: your.email@example.com
+Questions about this policy: joshua.z.zhang2029@gmail.com
