@@ -14,7 +14,8 @@
     "preview": "node scripts/preview.ts",
     "test": "node --test test/*.test.ts",
     "calibrate": "node --test test/calibration.test.ts",
-    "tune-prior": "node scripts/tune-prior.ts"
+    "tune-prior": "node scripts/tune-prior.ts",
+    "store-shot": "node scripts/store-shot.ts"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

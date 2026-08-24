@@ -4,3 +4,5 @@ dist/
 test/fixtures/*.json
 !test/fixtures/.gitkeep
 preview.html
+store-shot.html
+store-*.png
